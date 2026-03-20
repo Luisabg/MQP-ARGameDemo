@@ -2,6 +2,7 @@ import pygame
 import sys
 import os
 import textwrap
+import random
 
 pygame.init()
 clock = pygame.time.Clock()
@@ -161,6 +162,24 @@ tutorial_sequence += paragraph_pages(
     "You're now ready to explore the Digital Arcade."
 )
 
+# Function to generate a new timer_guess sequence
+def create_timer_guess_sequence(target_seconds):
+    sequence = []
+    sequence += paragraph_pages(
+        "Welcome to Second Guesser! You will be shown a number, once it disappears, try to tap exactly that many seconds later. The closer you are to the target time, the better your score. Ready to test your timing?"
+    )
+    sequence.append({
+        "type": "timer_number",
+        "number": target_seconds
+    })
+    sequence.append({
+        "type": "timer_blank"
+    })
+    sequence.append({
+        "type": "timer_result"
+    })
+    return sequence
+
 # -----------------------------
 # STATE
 # -----------------------------
@@ -176,6 +195,11 @@ state = STATE_CALIBRATING
 state_start_time = pygame.time.get_ticks()
 
 current_page_index = 0
+timer_guess_page_index = 0
+timer_guess_sequence = []
+timer_guess_target = None
+timer_guess_start_time = None
+measured_time_seconds = None
 
 countdown_start_time = None
 timing_start_time = None
@@ -186,9 +210,14 @@ last_space_time = None
 # STATE HELPERS
 # -----------------------------
 def set_state(new_state):
-    global state, state_start_time
+    global state, state_start_time, timer_guess_sequence, timer_guess_page_index, timer_guess_target
     state = new_state
     state_start_time = pygame.time.get_ticks()
+    
+    if new_state == STATE_TIMER_GUESS:
+        timer_guess_target = random.randint(2, 8)
+        timer_guess_sequence = create_timer_guess_sequence(timer_guess_target)
+        timer_guess_page_index = 0
 
 def current_page():
     return tutorial_sequence[current_page_index]
@@ -200,6 +229,16 @@ def advance_tutorial():
     else:
         set_state(STATE_BETWEEN_GAMES)
     last_space_time = None
+
+def timer_guess_current_page():
+    return timer_guess_sequence[timer_guess_page_index]
+
+def advance_timer_guess():
+    global timer_guess_page_index
+    if timer_guess_page_index < len(timer_guess_sequence) - 1:
+        timer_guess_page_index += 1
+    else:
+        set_state(STATE_BETWEEN_GAMES)
 
 # -----------------------------
 # MAIN LOOP
@@ -255,6 +294,25 @@ while running:
                 elif event.key == pygame.K_4:
                     set_state(STATE_DDR)
 
+            elif state == STATE_TIMER_GUESS:
+                page = timer_guess_current_page()
+                page_type = page["type"]
+
+                if event.key == pygame.K_SPACE:
+                    if page_type == "text":
+                        advance_timer_guess()
+
+                    elif page_type == "timer_number":
+                        advance_timer_guess()
+
+                    elif page_type == "timer_blank":
+                        if timer_guess_start_time is not None:
+                            measured_time_seconds = (current_time - timer_guess_start_time) / 1000.0
+                            advance_timer_guess()
+
+                    elif page_type == "timer_result":
+                        advance_timer_guess()
+
     # -----------------------------
     # LOGIC
     # -----------------------------
@@ -279,6 +337,20 @@ while running:
 
         else:
             countdown_start_time = None
+
+    elif state == STATE_TIMER_GUESS:
+        page = timer_guess_current_page()
+        page_type = page["type"]
+
+        if page_type == "timer_number":
+            pass
+
+        elif page_type == "timer_blank":
+            if timer_guess_start_time is None:
+                timer_guess_start_time = current_time
+
+        else:
+            timer_guess_start_time = None
 
     # -----------------------------
     # DRAW
@@ -351,7 +423,42 @@ while running:
         text("TODO: FAST REFLEXES", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
 
     elif state == STATE_TIMER_GUESS:
-        text("TODO: TIMER GUESS", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        page = timer_guess_current_page()
+        page_type = page["type"]
+
+        if page_type == "text":
+            draw_multiline_text(
+                page["lines"],
+                TEXT_SIZE,
+                COLOR_WHITE,
+                SCREEN_CENTER_X,
+                SCREEN_CENTER_Y,
+                line_spacing=LINE_SPACING,
+            )
+
+        elif page_type == "timer_number":
+            text(str(page["number"]), 96, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+
+        elif page_type == "timer_blank":
+            text("", 48, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20)
+
+        elif page_type == "timer_result":
+            accuracy = abs(measured_time_seconds - timer_guess_target)
+            result_message = f"Target: {timer_guess_target}s Your time: {measured_time_seconds:.2f}s Difference: {accuracy:.2f}s"
+            result_lines = split_paragraph_into_pages(
+                result_message,
+                max_chars_per_line=PARAGRAPH_MAX_CHARS_PER_LINE,
+                max_lines_per_page=PARAGRAPH_MAX_LINES_PER_PAGE
+            )[0]
+
+            draw_multiline_text(
+                result_lines,
+                TEXT_SIZE,
+                COLOR_WHITE,
+                SCREEN_CENTER_X,
+                SCREEN_CENTER_Y,
+                line_spacing=LINE_SPACING,
+            )
 
     elif state == STATE_DDR:
         text("TODO: DDR", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
