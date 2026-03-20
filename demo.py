@@ -166,18 +166,20 @@ tutorial_sequence += paragraph_pages(
 # -----------------------------
 STATE_CALIBRATING = "calibrating"
 STATE_TUTORIAL = "tutorial"
+STATE_BETWEEN_GAMES = "between_games"
+STATE_MATCHING = "matching"
+STATE_FAST_REFLEXES = "fast_reflexes"
+STATE_TIMER_GUESS = "timer_guess"
+STATE_DDR = "ddr"
 
 state = STATE_CALIBRATING
 state_start_time = pygame.time.get_ticks()
 
 current_page_index = 0
 
-# timing variables
 countdown_start_time = None
 timing_start_time = None
 measured_time_seconds = None
-
-# double tap tracking
 last_space_time = None
 
 # -----------------------------
@@ -195,6 +197,8 @@ def advance_tutorial():
     global current_page_index, last_space_time
     if current_page_index < len(tutorial_sequence) - 1:
         current_page_index += 1
+    else:
+        set_state(STATE_BETWEEN_GAMES)
     last_space_time = None
 
 # -----------------------------
@@ -210,6 +214,9 @@ while running:
             running = False
 
         elif event.type == pygame.KEYDOWN:
+
+            if event.key == pygame.K_ESCAPE:
+                set_state(STATE_BETWEEN_GAMES)
             if state == STATE_TUTORIAL:
                 page = current_page()
                 page_type = page["type"]
@@ -222,7 +229,6 @@ while running:
                         advance_tutorial()
 
                     elif page_type == "qr":
-                        # Require a double tap: two SPACE presses close together
                         if last_space_time is not None and (current_time - last_space_time) <= DOUBLE_TAP_WINDOW_MS:
                             advance_tutorial()
                         else:
@@ -238,6 +244,16 @@ while running:
 
                     elif page_type == "result":
                         advance_tutorial()
+
+            elif state == STATE_BETWEEN_GAMES:
+                if event.key == pygame.K_1:
+                    set_state(STATE_MATCHING)
+                elif event.key == pygame.K_2:
+                    set_state(STATE_FAST_REFLEXES)
+                elif event.key == pygame.K_3:
+                    set_state(STATE_TIMER_GUESS)
+                elif event.key == pygame.K_4:
+                    set_state(STATE_DDR)
 
     # -----------------------------
     # LOGIC
@@ -325,6 +341,20 @@ while running:
                 SCREEN_CENTER_Y,
                 line_spacing=LINE_SPACING,
             )
+    elif state == STATE_BETWEEN_GAMES:
+        pass  # blank screen on purpose
+
+    elif state == STATE_MATCHING:
+        text("TODO: MATCHING", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+
+    elif state == STATE_FAST_REFLEXES:
+        text("TODO: FAST REFLEXES", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+
+    elif state == STATE_TIMER_GUESS:
+        text("TODO: TIMER GUESS", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+
+    elif state == STATE_DDR:
+        text("TODO: DDR", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
 
     pygame.display.flip()
     clock.tick(60)
