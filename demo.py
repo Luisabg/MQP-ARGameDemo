@@ -254,8 +254,10 @@ while running:
 
         elif event.type == pygame.KEYDOWN:
 
+            # leave tutorial or game early by pressing ESC
             if event.key == pygame.K_ESCAPE:
                 set_state(STATE_BETWEEN_GAMES)
+
             if state == STATE_TUTORIAL:
                 page = current_page()
                 page_type = page["type"]
@@ -283,7 +285,7 @@ while running:
 
                     elif page_type == "result":
                         advance_tutorial()
-
+            # Handling switching between game modes
             elif state == STATE_BETWEEN_GAMES:
                 if event.key == pygame.K_1:
                     set_state(STATE_MATCHING)
