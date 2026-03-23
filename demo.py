@@ -219,9 +219,11 @@ def set_state(new_state):
         timer_guess_sequence = create_timer_guess_sequence(timer_guess_target)
         timer_guess_page_index = 0
 
+#return current page
 def current_page():
     return tutorial_sequence[current_page_index]
 
+#go to next page in tutorial
 def advance_tutorial():
     global current_page_index, last_space_time
     if current_page_index < len(tutorial_sequence) - 1:
@@ -230,9 +232,11 @@ def advance_tutorial():
         set_state(STATE_BETWEEN_GAMES)
     last_space_time = None
 
+#return current timer page
 def timer_guess_current_page():
     return timer_guess_sequence[timer_guess_page_index]
 
+#go to next timer page
 def advance_timer_guess():
     global timer_guess_page_index
     if timer_guess_page_index < len(timer_guess_sequence) - 1:
@@ -248,16 +252,18 @@ while running:
     current_time = pygame.time.get_ticks()
     elapsed = current_time - state_start_time
 
+    #end game
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
+        #key press logic
         elif event.type == pygame.KEYDOWN:
 
             # leave tutorial or game early by pressing ESC
             if event.key == pygame.K_ESCAPE:
                 set_state(STATE_BETWEEN_GAMES)
-
+            #tutorial logic
             if state == STATE_TUTORIAL:
                 page = current_page()
                 page_type = page["type"]
@@ -361,6 +367,8 @@ while running:
 
     if state == STATE_CALIBRATING:
         text("Calibrating...", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+
+    #state drawing
 
     elif state == STATE_TUTORIAL:
         page = current_page()
