@@ -12,7 +12,7 @@ clock = pygame.time.Clock()
 # -----------------------------
 WIDTH, HEIGHT = 640, 400
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Demo [TITLE]")
+pygame.display.set_caption("ARcade")
 
 # -----------------------------
 # LAYOUT / STYLE
