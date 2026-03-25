@@ -132,7 +132,7 @@ def card_rect(index):
 
 class MatchingGame:
     def __init__(self):
-        self.card_back = load_card_sprite("CardBack.png")
+        self.card_back = load_card_sprite("CardBacksMonster.png")
         self.face_images = {s: load_card_sprite(s) for s in set(CARD_SYMBOLS)}
         self.reset()
 
@@ -146,6 +146,8 @@ class MatchingGame:
         self.flash_card = None
         self.flash_start = None
         self.FLASH_MS = 800
+        self.start_time = None
+        self.end_time = None
 
     @property
     def done(self):
@@ -158,6 +160,10 @@ class MatchingGame:
             return
         self.flash_card = None
 
+        # Start timer on first card pick
+        if self.start_time is None:
+            self.start_time = pygame.time.get_ticks()
+
         if self.selected is None:
             self.selected = index
         else:
@@ -168,6 +174,9 @@ class MatchingGame:
                 self.revealed[second] = True
                 self.selected = None
                 self.matched_pairs += 1
+                # Stop timer on final pair
+                if self.matched_pairs == 4:
+                    self.end_time = pygame.time.get_ticks()
             else:
                 self.flash_card = first
                 self.flash_start = pygame.time.get_ticks()
@@ -184,16 +193,14 @@ class MatchingGame:
         font_label = pygame.font.SysFont(None, 26)
         font_num = pygame.font.SysFont(None, 22)
 
-        if self.done:
-            label = "Congrats you found all the matches!"
-        elif self.selected is None:
-            label = "Pick a card 1-8"
+        # Timer
+        if self.end_time is not None:
+            elapsed_s = (self.end_time - self.start_time) / 1000.0
+            time_str = f"Time: {elapsed_s:.2f}s"
         else:
-            label = f"Pick a card 1-8"
+            time_str = None
 
-        lbl_surf = font_label.render(label, True, COLOR_WHITE)
-        screen.blit(lbl_surf, lbl_surf.get_rect(center=(SCREEN_CENTER_X, GRID_Y - 22)))
-
+        # --- Cards ---
         for i in range(8):
             rect = card_rect(i)
             face_up = self.revealed[i]
@@ -231,8 +238,19 @@ class MatchingGame:
                 fb = font_label.render(self.symbols[i], True, COLOR_WHITE)
                 screen.blit(fb, fb.get_rect(center=rect.center))
 
-        score_surf = font_label.render(f"Pairs: {self.matched_pairs}/4", True, COLOR_WHITE)
-        screen.blit(score_surf, score_surf.get_rect(center=(SCREEN_CENTER_X, GRID_Y + GRID_H + 22)))
+        below_y = GRID_Y + GRID_H + 24
+
+        if self.done:
+            congrats_surf = font_label.render("Congrats you found all the matches!", True, COLOR_GREEN)
+            screen.blit(congrats_surf, congrats_surf.get_rect(center=(SCREEN_CENTER_X, below_y)))
+
+            if time_str is not None:
+                time_surf = font_label.render(time_str, True, COLOR_YELLOW)
+                screen.blit(time_surf, time_surf.get_rect(center=(SCREEN_CENTER_X, below_y + 26)))
+        else:
+            lbl_surf = font_label.render("Pick a card 1-8", True, COLOR_WHITE)
+            screen.blit(lbl_surf, lbl_surf.get_rect(center=(SCREEN_CENTER_X, below_y)))
+
 
 matching_game = MatchingGame()
 
