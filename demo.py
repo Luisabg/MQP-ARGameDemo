@@ -91,7 +91,7 @@ def split_paragraph_into_pages(paragraph, max_chars_per_line=32, max_lines_per_p
 # -----------------------------
 # SPRITE HELPER
 # -----------------------------
-def draw_sprite(filename, fit_to_screen=False):
+def draw_sprite(filename, fit_to_screen=False, smooth=True):
     path = os.path.join("sprites", filename)
 
     try:
@@ -104,7 +104,10 @@ def draw_sprite(filename, fit_to_screen=False):
         img_w, img_h = image.get_size()
         scale_factor = min(WIDTH / img_w, HEIGHT / img_h)
         new_size = (int(img_w * scale_factor), int(img_h * scale_factor))
-        image = pygame.transform.smoothscale(image, new_size)
+        if smooth:
+            image = pygame.transform.smoothscale(image, new_size)
+        else:
+            image = pygame.transform.scale(image, new_size)
 
     rect = image.get_rect(center=(SCREEN_CENTER_X, SCREEN_CENTER_Y))
     screen.blit(image, rect)
@@ -344,6 +347,14 @@ def create_timer_guess_sequence(target_seconds):
     })
     return sequence
 
+def create_ddr_sequence():
+    sequence = []
+    sequence += paragraph_pages("Welcome to DDR! Press the arrow key that matches the arrow on screen!")
+    sequence += paragraph_pages("You have 10 arrows. Good luck!")
+    sequence.append({"type": "ddr_game"})
+    sequence.append({"type": "ddr_result"})  # results page as different type so we can show score/time at end without needing to generate new random arrows
+    return sequence
+
 # -----------------------------
 # STATE
 # -----------------------------
@@ -370,6 +381,23 @@ timing_start_time = None
 measured_time_seconds = None
 last_space_time = None
 
+# ddr state variables
+ddr_current_arrow = None
+ddr_feedback = None # hit or miss feedback
+ddr_feedback_time = None # moment player presses key
+DDR_FEEDBACK_DURATION_MS = 600 # how long to show feedback message
+DDR_ARROWS = ["up", "down", "left", "right"] # will be different folders
+ddr_current_sprite = None # current sprite chosen randomly from folders
+ddr_moves_completed = 0
+DDR_MAX_MOVES = 10 # game length
+# for pages
+ddr_sequence = []
+ddr_page_index = 0
+# scoring
+ddr_score = 0
+ddr_game_start_time = None
+ddr_total_time = None
+
 # -----------------------------
 # STATE HELPERS
 # -----------------------------
@@ -385,6 +413,19 @@ def set_state(new_state):
         timer_guess_target = random.randint(2, 8)
         timer_guess_sequence = create_timer_guess_sequence(timer_guess_target)
         timer_guess_page_index = 0
+
+    # When entering DDR state, immediately select a random arrow and reset feedback
+    if new_state == STATE_DDR:
+        global ddr_feedback, ddr_feedback_time, ddr_moves_completed, ddr_sequence, ddr_page_index, ddr_score, ddr_game_start_time, ddr_total_time
+        ddr_sequence = create_ddr_sequence()
+        ddr_page_index = 0
+        ddr_feedback = None
+        ddr_feedback_time = None
+        ddr_moves_completed = 0
+        ddr_score = 0
+        ddr_game_start_time = None
+        ddr_total_time = None
+        new_ddr_arrow()
 
 def current_page():
     return tutorial_sequence[current_page_index]
@@ -406,6 +447,29 @@ def advance_timer_guess():
         timer_guess_page_index += 1
     else:
         set_state(STATE_BETWEEN_GAMES)
+
+def ddr_current_page():
+    return ddr_sequence[ddr_page_index]
+
+def advance_ddr():
+    global ddr_page_index
+    if ddr_page_index < len(ddr_sequence) - 1:
+        ddr_page_index += 1
+        if ddr_sequence[ddr_page_index]["type"] == "ddr_game":
+            new_ddr_arrow()  # only pick first arrow once game actually starts
+    else:
+        set_state(STATE_BETWEEN_GAMES)
+
+# Function to select a new random DDR arrow
+def new_ddr_arrow():
+    global ddr_current_arrow, ddr_current_sprite
+    ddr_current_arrow = random.choice(DDR_ARROWS)
+
+    # list all files in that arrow's folder and pick one randomly
+    folder = os.path.join("sprites", "ddr", ddr_current_arrow)
+    options = os.listdir(folder)
+    chosen_file = random.choice(options)
+    ddr_current_sprite = os.path.join("ddr", ddr_current_arrow, chosen_file)
 
 # -----------------------------
 # MAIN LOOP
@@ -479,10 +543,33 @@ while running:
 
                     elif page_type == "timer_result":
                         advance_timer_guess()
-            elif state == STATE_MATCHING:
-                if pygame.K_1 <= event.key <+ pygame.K_9:
-                    index = event.key - pygame.K_1
-                    matching_game.select(index)
+
+            elif state == STATE_DDR:
+                page = ddr_current_page()
+
+                if page["type"] == "text":
+                    if event.key == pygame.K_SPACE:
+                        advance_ddr()
+
+                elif page["type"] == "ddr_game":
+                    arrow_key_map = {
+                        pygame.K_UP: "up",
+                        pygame.K_DOWN: "down",
+                        pygame.K_LEFT: "left",
+                        pygame.K_RIGHT: "right",
+                    }
+                    if event.key in arrow_key_map:
+                        pressed = arrow_key_map[event.key]
+                        if pressed == ddr_current_arrow:
+                            ddr_feedback = "hit"
+                        else:
+                            ddr_feedback = "miss"
+                        ddr_feedback_time = current_time
+
+                elif page["type"] == "ddr_result":
+                    if event.key == pygame.K_SPACE:
+                        advance_ddr()
+
     # -----------------------------
     # LOGIC
     # -----------------------------
@@ -521,6 +608,25 @@ while running:
 
         else:
             timer_guess_start_time = None
+
+    elif state == STATE_DDR:
+        page = ddr_current_page()
+
+        if page["type"] == "ddr_game":
+            if ddr_game_start_time is None:
+                ddr_game_start_time = current_time
+
+            if ddr_feedback is not None:
+                if current_time - ddr_feedback_time >= DDR_FEEDBACK_DURATION_MS:
+                    if ddr_feedback == "hit":
+                        ddr_score += 1
+                    ddr_moves_completed += 1
+                    if ddr_moves_completed >= DDR_MAX_MOVES:
+                        ddr_total_time = (current_time - ddr_game_start_time) / 1000.0
+                        advance_ddr()
+                    else:
+                        new_ddr_arrow()
+                        ddr_feedback = None
 
     # -----------------------------
     # DRAW
@@ -631,7 +737,32 @@ while running:
             )
 
     elif state == STATE_DDR:
-        text("TODO: DDR", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        # text("TODO: DDR", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        page = ddr_current_page()
+
+        if page["type"] == "text":
+            draw_multiline_text(
+                page["lines"], TEXT_SIZE, COLOR_WHITE,
+                SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING
+            )
+
+        elif page["type"] == "ddr_game":
+            if ddr_feedback == "hit":
+                draw_sprite("check.png")
+            elif ddr_feedback == "miss":
+                draw_sprite("x.png", fit_to_screen=True, smooth=False)
+            else:
+                draw_sprite(ddr_current_sprite, fit_to_screen=True, smooth=False)
+
+        elif page["type"] == "ddr_result":
+            result_message = f"Score: {ddr_score}/10  Time: {ddr_total_time:.1f}s"
+            result_lines = split_paragraph_into_pages(
+                result_message,
+                max_chars_per_line=PARAGRAPH_MAX_CHARS_PER_LINE,
+                max_lines_per_page=PARAGRAPH_MAX_LINES_PER_PAGE
+            )[0]
+            draw_multiline_text(result_lines, TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y,
+                                line_spacing=LINE_SPACING)
 
     pygame.display.flip()
     clock.tick(60)
