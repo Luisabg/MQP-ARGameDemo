@@ -42,8 +42,6 @@ TEXT_SIZE = 32
 
 COLOR_BLACK = (0, 0, 0)
 COLOR_WHITE = (255, 255, 255)
-COLOR_RED = (220, 70, 70)    # For bad sprite warnings (monsters)
-COLOR_GREEN = (70, 220, 70)  # For good sprite instructions (safe sprites)
 COLOR_GREEN = (60, 200, 100)
 COLOR_YELLOW = (240, 200, 50)
 COLOR_RED = (220, 60, 60)
@@ -168,7 +166,7 @@ class MatchingGame:
 
     @property
     def done(self):
-        return self.matched_pairs == 4
+            return self.matched_pairs == 4
 
     def select(self, index):
         if self.revealed[index]:
@@ -629,7 +627,12 @@ while running:
 
                     elif page_type == "timer_result":
                         advance_timer_guess()
-
+                 #######################################################################
+            elif state ==  STATE_MATCHING:
+                if pygame.K_1 <= event.key < + pygame.K_9:
+                    index = event.key - pygame.K_1
+                    matching_game.select(index)
+                #######################################################################
             elif state == STATE_FAST_REFLEXES:
                 # Handle SPACE key presses during fast-reflex game
                 if event.key == pygame.K_SPACE:
