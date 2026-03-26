@@ -12,7 +12,7 @@ clock = pygame.time.Clock()
 # -----------------------------
 WIDTH, HEIGHT = 640, 400
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Demo [TITLE]")
+pygame.display.set_caption("ARcade")
 
 # -----------------------------
 # LAYOUT / STYLE
@@ -31,6 +31,25 @@ TEXT_SIZE = 32
 
 COLOR_BLACK = (0, 0, 0)
 COLOR_WHITE = (255, 255, 255)
+COLOR_GREEN = (60, 200, 100)
+COLOR_YELLOW = (240, 200, 50)
+COLOR_RED = (220, 60, 60)
+COLOR_DARK_GRAY = (40, 40, 40)
+COLOR_GRAY = (120, 120, 120)
+
+CARD_SYMBOLS = ["Monster1.png", "Monster2.png", "Monster3.png", "Monster4.png",
+                "Monster1.png", "Monster2.png", "Monster3.png", "Monster4.png"]
+
+CARD_COLS = 4
+CARD_ROWS = 2
+CARD_W = 110
+CARD_H = 110
+CARD_PAD = 16
+GRID_W = CARD_COLS * CARD_W + (CARD_COLS - 1) * CARD_PAD
+GRID_H = CARD_ROWS * CARD_H + (CARD_ROWS - 1) * CARD_PAD
+GRID_X = (WIDTH - GRID_W) // 2
+GRID_Y = (HEIGHT - GRID_H) // 2 + 10
+
 
 # -----------------------------
 # TEXT HELPERS
@@ -92,6 +111,151 @@ def draw_sprite(filename, fit_to_screen=False, smooth=True):
 
     rect = image.get_rect(center=(SCREEN_CENTER_X, SCREEN_CENTER_Y))
     screen.blit(image, rect)
+
+def load_card_sprite(filename):
+        path = os.path.join("sprites", filename)
+        try:
+            image = pygame.image.load(path).convert_alpha()
+            image = pygame.transform.smoothscale(image, (CARD_W - 16, CARD_H - 16))
+            return image
+        except (pygame.error, FileNotFoundError):
+            return None
+
+def card_rect(index):
+    col = index % CARD_COLS
+    row = index // CARD_COLS
+    x = GRID_X + col * (CARD_W + CARD_PAD)
+    y = GRID_Y + row * (CARD_H + CARD_PAD)
+    return pygame.Rect(x, y, CARD_W, CARD_H)
+
+
+# -----------------------------
+# MATCHING GAME
+# -----------------------------
+
+class MatchingGame:
+    def __init__(self):
+        self.card_back = load_card_sprite("CardBacksMonster.png")
+        self.face_images = {s: load_card_sprite(s) for s in set(CARD_SYMBOLS)}
+        self.reset()
+
+    def reset(self):
+        symbols = CARD_SYMBOLS[:]
+        random.shuffle(symbols)
+        self.symbols = symbols
+        self.revealed = [False] * 8
+        self.selected = None
+        self.matched_pairs = 0
+        self.flash_card = None
+        self.flash_start = None
+        self.FLASH_MS = 800
+        self.start_time = None
+        self.end_time = None
+
+    @property
+    def done(self):
+        return self.matched_pairs == 4
+
+    def select(self, index):
+        if self.revealed[index]:
+            return
+        if index == self.selected:
+            return
+        self.flash_card = None
+
+        # Start timer on first card pick
+        if self.start_time is None:
+            self.start_time = pygame.time.get_ticks()
+
+        if self.selected is None:
+            self.selected = index
+        else:
+            first = self.selected
+            second = index
+            if self.symbols[first] == self.symbols[second]:
+                self.revealed[first] = True
+                self.revealed[second] = True
+                self.selected = None
+                self.matched_pairs += 1
+                # Stop timer on final pair
+                if self.matched_pairs == 4:
+                    self.end_time = pygame.time.get_ticks()
+            else:
+                self.flash_card = first
+                self.flash_start = pygame.time.get_ticks()
+                self.selected = second
+
+    def update(self, current_time):
+        if self.flash_card is not None:
+            if current_time - self.flash_start >= self.FLASH_MS:
+                self.flash_card = None
+
+    def draw(self, screen, current_time):
+        self.update(current_time)
+
+        font_label = pygame.font.SysFont(None, 26)
+        font_num = pygame.font.SysFont(None, 22)
+
+        # Timer
+        if self.end_time is not None:
+            elapsed_s = (self.end_time - self.start_time) / 1000.0
+            time_str = f"Time: {elapsed_s:.2f}s"
+        else:
+            time_str = None
+
+        # --- Cards ---
+        for i in range(8):
+            rect = card_rect(i)
+            face_up = self.revealed[i]
+            is_sel = (i == self.selected)
+            is_flash = (i == self.flash_card)
+
+            # Border color
+            if is_flash:
+                border_col = COLOR_GREEN
+            elif face_up:
+                border_col = COLOR_GREEN
+            elif is_sel:
+                border_col = COLOR_YELLOW
+            else:
+                border_col = COLOR_GRAY
+
+            pygame.draw.rect(screen, COLOR_DARK_GRAY, rect, border_radius=10)
+            pygame.draw.rect(screen, border_col, rect, 3, border_radius=10)
+
+            # Card number
+            num_surf = font_num.render(str(i + 1), True, COLOR_GRAY)
+            screen.blit(num_surf, (rect.x + 6, rect.y + 5))
+
+            # Sprite
+            if face_up or is_sel or is_flash:
+                img = self.face_images.get(self.symbols[i])
+            else:
+                img = self.card_back
+
+            if img:
+                img_rect = img.get_rect(center=rect.center)
+                screen.blit(img, img_rect)
+            else:
+                # Fallback if sprite is  missing
+                fb = font_label.render(self.symbols[i], True, COLOR_WHITE)
+                screen.blit(fb, fb.get_rect(center=rect.center))
+
+        below_y = GRID_Y + GRID_H + 24
+
+        if self.done:
+            congrats_surf = font_label.render("Congrats you found all the matches!", True, COLOR_GREEN)
+            screen.blit(congrats_surf, congrats_surf.get_rect(center=(SCREEN_CENTER_X, below_y)))
+
+            if time_str is not None:
+                time_surf = font_label.render(time_str, True, COLOR_YELLOW)
+                screen.blit(time_surf, time_surf.get_rect(center=(SCREEN_CENTER_X, below_y + 26)))
+        else:
+            lbl_surf = font_label.render("Pick a card 1-8", True, COLOR_WHITE)
+            screen.blit(lbl_surf, lbl_surf.get_rect(center=(SCREEN_CENTER_X, below_y)))
+
+
+matching_game = MatchingGame()
 
 # -----------------------------
 # BUILD TUTORIAL PAGES
@@ -241,6 +405,9 @@ def set_state(new_state):
     global state, state_start_time, timer_guess_sequence, timer_guess_page_index, timer_guess_target
     state = new_state
     state_start_time = pygame.time.get_ticks()
+
+    if new_state == STATE_MATCHING:
+        matching_game.reset()
     
     if new_state == STATE_TIMER_GUESS:
         timer_guess_target = random.randint(2, 8)
@@ -526,7 +693,7 @@ while running:
         pass  # blank screen on purpose
 
     elif state == STATE_MATCHING:
-        text("TODO: MATCHING", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        matching_game.draw(screen, current_time)
 
     elif state == STATE_FAST_REFLEXES:
         text("TODO: FAST REFLEXES", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
