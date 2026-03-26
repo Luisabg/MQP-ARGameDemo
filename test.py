@@ -4,6 +4,15 @@ import os
 import textwrap
 import random
 
+try:
+    from pygame._sdl2 import Window as SDL2Window, Renderer as SDL2Renderer, Texture as SDL2Texture
+    SDL2_MULTI_WINDOW_AVAILABLE = True
+except ImportError:
+    SDL2Window = None
+    SDL2Renderer = None
+    SDL2Texture = None
+    SDL2_MULTI_WINDOW_AVAILABLE = False
+
 pygame.init()
 clock = pygame.time.Clock()
 
@@ -24,17 +33,6 @@ CALIBRATION_DURATION_MS = 10000
 COUNTDOWN_STEP_MS = 1000
 DOUBLE_TAP_WINDOW_MS = 500
 
-# FAST REFLEXES GAME CONSTANTS
-# Controls timing between sprite spawns (random delay between min and max)
-FAST_REFLEX_MIN_GAP_MS = 500      # Minimum milliseconds to wait before next sprite
-FAST_REFLEX_MAX_GAP_MS = 1800     # Maximum milliseconds to wait before next sprite
-# Controls how long each sprite stays visible on screen
-FAST_REFLEX_MIN_VISIBLE_MS = 1000 # Sprite visible for at least 1 second
-FAST_REFLEX_MAX_VISIBLE_MS = 3000 # Sprite visible for at most 4 seconds
-# Gameplay difficulty settings
-FAST_REFLEX_BAD_CHANCE = 0.4      # 40% chance a sprite is "bad" (monster) vs "good"
-FAST_REFLEX_TOTAL_ROUNDS = 15     # Total number of rounds before game ends
-
 PARAGRAPH_MAX_CHARS_PER_LINE = 32
 PARAGRAPH_MAX_LINES_PER_PAGE = 3
 LINE_SPACING = 38
@@ -42,8 +40,6 @@ TEXT_SIZE = 32
 
 COLOR_BLACK = (0, 0, 0)
 COLOR_WHITE = (255, 255, 255)
-COLOR_RED = (220, 70, 70)    # For bad sprite warnings (monsters)
-COLOR_GREEN = (70, 220, 70)  # For good sprite instructions (safe sprites)
 COLOR_GREEN = (60, 200, 100)
 COLOR_YELLOW = (240, 200, 50)
 COLOR_RED = (220, 60, 60)
@@ -113,7 +109,6 @@ def draw_sprite(filename, fit_to_screen=False, smooth=True):
         text(f"Missing sprite: {filename}", 24, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
         return
 
-    #resize image to fit screen
     if fit_to_screen:
         img_w, img_h = image.get_size()
         scale_factor = min(WIDTH / img_w, HEIGHT / img_h)
@@ -150,6 +145,7 @@ def card_rect(index):
 class MatchingGame:
     def __init__(self):
         self.card_back = load_card_sprite("CardBacksMonster.png")
+        self.qr_card = load_card_sprite("SquareQRCODE.png")
         self.face_images = {s: load_card_sprite(s) for s in set(CARD_SYMBOLS)}
         self.reset()
 
@@ -159,52 +155,84 @@ class MatchingGame:
         self.symbols = symbols
         self.revealed = [False] * 8
         self.selected = None
+        self.first_scanned = None
         self.matched_pairs = 0
         self.flash_card = None
         self.flash_start = None
         self.FLASH_MS = 800
         self.start_time = None
         self.end_time = None
+        self.last_revealed_symbol = None
+        self.pending_reveal_symbol = None
+        self.pending_scan_index = None
+        self.reveal_space_time = None
+        self.match_feedback_until = 0
+        self.match_feedback_text = ""
+        self.MATCH_FEEDBACK_MS = 1500
+        self.MATCH_MONSTER_PREVIEW_MS = 3000
+        self.match_feedback_start = 0
 
     @property
     def done(self):
         return self.matched_pairs == 4
 
     def select(self, index):
+        if self.pending_reveal_symbol is not None:
+            return
         if self.revealed[index]:
             return
         if index == self.selected:
             return
         self.flash_card = None
+        self.pending_reveal_symbol = self.symbols[index]
+        self.pending_scan_index = index
+        self.last_revealed_symbol = None
+        self.reveal_space_time = None
+        self.selected = index
 
         # Start timer on first card pick
         if self.start_time is None:
             self.start_time = pygame.time.get_ticks()
 
-        if self.selected is None:
-            self.selected = index
+    def confirm_pending_scan(self, current_time):
+        if self.pending_reveal_symbol is None or self.pending_scan_index is None:
+            return
+
+        scanned_index = self.pending_scan_index
+        self.last_revealed_symbol = self.pending_reveal_symbol
+        self.pending_reveal_symbol = None
+        self.pending_scan_index = None
+        self.reveal_space_time = None
+        self.selected = None
+
+        if self.first_scanned is None:
+            self.first_scanned = scanned_index
+            return
+
+        first = self.first_scanned
+        second = scanned_index
+        if self.symbols[first] == self.symbols[second]:
+            self.revealed[first] = True
+            self.revealed[second] = True
+            self.first_scanned = None
+            self.matched_pairs += 1
+            self.match_feedback_start = current_time + self.MATCH_MONSTER_PREVIEW_MS
+            self.match_feedback_until = self.match_feedback_start + self.MATCH_FEEDBACK_MS
+            self.match_feedback_text = f"{self.matched_pairs}/4 matches found"
+            # Stop timer on final pair
+            if self.matched_pairs == 4:
+                self.end_time = pygame.time.get_ticks()
         else:
-            first = self.selected
-            second = index
-            if self.symbols[first] == self.symbols[second]:
-                self.revealed[first] = True
-                self.revealed[second] = True
-                self.selected = None
-                self.matched_pairs += 1
-                # Stop timer on final pair
-                if self.matched_pairs == 4:
-                    self.end_time = pygame.time.get_ticks()
-            else:
-                self.flash_card = first
-                self.flash_start = pygame.time.get_ticks()
-                self.selected = second
+            self.flash_card = first
+            self.flash_start = current_time
+            self.first_scanned = second
 
     def update(self, current_time):
         if self.flash_card is not None:
             if current_time - self.flash_start >= self.FLASH_MS:
                 self.flash_card = None
 
-    def draw(self, screen, current_time):
+    def draw(self, screen, current_time, show_revealed_faces=True, show_status_text=True, show_qr_on_reveal=False):
         self.update(current_time)
 
         font_label = pygame.font.SysFont(None, 26)
@@ -224,26 +252,31 @@ class MatchingGame:
             is_sel = (i == self.selected)
             is_flash = (i == self.flash_card)
 
-            # Border color
-            if is_flash:
-                border_col = COLOR_GREEN
-            elif face_up:
-                border_col = COLOR_GREEN
-            elif is_sel:
-                border_col = COLOR_YELLOW
-            else:
-                border_col = COLOR_GRAY
+            # Hide matched cards entirely
+            if face_up:
+                continue
 
+            qr_visible = (
+                show_qr_on_reveal
+                and self.pending_scan_index is not None
+                and i == self.pending_scan_index
+            )
+
+            # Draw card without border outline
             pygame.draw.rect(screen, COLOR_DARK_GRAY, rect, border_radius=10)
-            pygame.draw.rect(screen, border_col, rect, 3, border_radius=10)
 
             # Card number
             num_surf = font_num.render(str(i + 1), True, COLOR_GRAY)
             screen.blit(num_surf, (rect.x + 6, rect.y + 5))
 
             # Sprite
-            if face_up or is_sel or is_flash:
-                img = self.face_images.get(self.symbols[i])
+            if qr_visible:
+                img = self.qr_card
+            elif face_up or is_sel or is_flash:
+                if show_revealed_faces:
+                    img = self.face_images.get(self.symbols[i])
+                else:
+                    img = self.card_back
             else:
                 img = self.card_back
 
@@ -257,19 +290,85 @@ class MatchingGame:
 
         below_y = GRID_Y + GRID_H + 24
 
-        if self.done:
-            congrats_surf = font_label.render("Congrats you found all the matches!", True, COLOR_GREEN)
+        if show_status_text and self.done:
+            congrats_surf = font_label.render("Congrats you found all the matches!", True, COLOR_WHITE)
             screen.blit(congrats_surf, congrats_surf.get_rect(center=(SCREEN_CENTER_X, below_y)))
 
             if time_str is not None:
-                time_surf = font_label.render(time_str, True, COLOR_YELLOW)
+                time_surf = font_label.render(time_str, True, COLOR_WHITE)
                 screen.blit(time_surf, time_surf.get_rect(center=(SCREEN_CENTER_X, below_y + 26)))
-        else:
-            lbl_surf = font_label.render("Pick a card 1-8", True, COLOR_WHITE)
-            screen.blit(lbl_surf, lbl_surf.get_rect(center=(SCREEN_CENTER_X, below_y)))
+       
 
 
 matching_game = MatchingGame()
+matching_window = None
+matching_renderer = None
+matching_surface = None
+
+
+def open_matching_window():
+    global matching_window, matching_renderer, matching_surface
+    if not SDL2_MULTI_WINDOW_AVAILABLE:
+        return
+    if matching_window is None:
+        matching_window = SDL2Window("ARcade - Matching", size=(WIDTH, HEIGHT), position=(760, 80))
+        matching_renderer = SDL2Renderer(matching_window)
+        matching_surface = pygame.Surface((WIDTH, HEIGHT)).convert_alpha()
+
+
+def close_matching_window():
+    global matching_window, matching_renderer, matching_surface
+    # Renderer/Texture objects in pygame._sdl2 are released by GC in pygame 2.6.x.
+    # Calling unsupported destroy() methods raises AttributeError in some builds.
+    if matching_renderer is not None:
+        matching_renderer = None
+    if matching_window is not None:
+        matching_window.destroy()
+        matching_window = None
+    matching_surface = None
+
+
+def draw_matching_window(current_time):
+    if matching_renderer is None or matching_surface is None:
+        return
+
+    matching_surface.fill(COLOR_BLACK)
+    matching_game.draw(
+        matching_surface,
+        current_time,
+        show_revealed_faces=False,
+        show_status_text=False,
+        show_qr_on_reveal=True,
+    )
+    matching_texture = SDL2Texture.from_surface(matching_renderer, matching_surface)
+    matching_renderer.clear()
+    matching_texture.draw()
+    matching_renderer.present()
+    # Explicit delete releases the temporary texture without calling unsupported APIs.
+    del matching_texture
+
+
+def event_window_id(event):
+    """Best-effort extraction of source window id for SDL2-backed pygame events."""
+    if hasattr(event, "window"):
+        return event.window
+    if hasattr(event, "windowID"):
+        return event.windowID
+    event_dict = getattr(event, "dict", None)
+    if isinstance(event_dict, dict):
+        return event_dict.get("window") or event_dict.get("windowID")
+    return None
+
+
+def is_matching_window_event(event):
+    if not (SDL2_MULTI_WINDOW_AVAILABLE and matching_window is not None):
+        return False
+    window_id = event_window_id(event)
+    # Some pygame backends omit window id metadata on KEYDOWN events.
+    # Treat unscoped key events as matching-window input so controls still work.
+    if window_id is None:
+        return True
+    return window_id == matching_window.id
 
 # -----------------------------
 # BUILD TUTORIAL PAGES
@@ -388,36 +487,13 @@ timer_guess_page_index = 0
 timer_guess_sequence = []
 timer_guess_target = None
 timer_guess_start_time = None
+measured_time_seconds = None
 
 countdown_start_time = None
 timing_start_time = None
 measured_time_seconds = None
 last_space_time = None
 
-
-# FAST REFLEXES STATE VARIABLES
-# Sprite lists: good sprites are safe to ignore, bad sprites must be caught by pressing SPACE
-fast_reflex_good_sprites = ["Fast_Reflexes/Fish1.png", "Fast_Reflexes/Fish2.png", "Fast_Reflexes/Fish3.png", "Fast_Reflexes/Fish4.png", "Fast_Reflexes/Fish5.png"]
-fast_reflex_bad_sprites = ["Fast_Reflexes/Ball1.png","Fast_Reflexes/Ball2.png","Fast_Reflexes/Tree.png","Fast_Reflexes/Boot.png"]
-# Timing state: when the next sprite should spawn and when current sprite expires
-fast_reflex_next_spawn_time = 0                # Milliseconds: when to show the next sprite
-fast_reflex_sprite_end_time = None             # Milliseconds: when current sprite disappears
-# Sprite display state: what sprite is showing and whether it's bad
-fast_reflex_current_sprite = None              # Filename of sprite currently on screen, or None
-fast_reflex_current_is_bad = False             # True if current sprite is a monster to catch
-fast_reflex_bad_spawn_time = None              # Milliseconds: when the bad sprite appeared (for reaction time)
-# Game progress and scoring
-fast_reflex_rounds_completed = 0               # How many sprites have been shown so far
-fast_reflex_hits = 0                           # Number of bad sprites successfully caught
-fast_reflex_misses = 0                         # Number of bad sprites that expired without being caught
-fast_reflex_false_alarms = 0                   # Number of times player pressed SPACE on good sprites or empty screen
-fast_reflex_score = 0                          # Total points earned (faster catches = higher score)
-fast_reflex_last_reaction_ms = None            # Reaction time in ms for most recent catch
-# Feedback display
-fast_reflex_feedback = ""                      # Message to show player ("Caught!", "Too early!", etc.)
-fast_reflex_feedback_until = 0                 # Milliseconds: when to stop showing feedback message
-# Game state
-fast_reflex_game_over = False                  # True when 15 rounds are completed
 # ddr state variables
 ddr_current_arrow = None
 ddr_feedback = None # hit or miss feedback
@@ -440,57 +516,21 @@ ddr_total_time = None
 # -----------------------------
 def set_state(new_state):
     global state, state_start_time, timer_guess_sequence, timer_guess_page_index, timer_guess_target
+    old_state = state
     state = new_state
     state_start_time = pygame.time.get_ticks()
 
+    if old_state == STATE_MATCHING and new_state != STATE_MATCHING:
+        close_matching_window()
+
     if new_state == STATE_MATCHING:
         matching_game.reset()
+        open_matching_window()
     
     if new_state == STATE_TIMER_GUESS:
         timer_guess_target = random.randint(2, 8)
         timer_guess_sequence = create_timer_guess_sequence(timer_guess_target)
         timer_guess_page_index = 0
-    elif new_state == STATE_FAST_REFLEXES:
-        reset_fast_reflexes()
-
-
-def fast_reflex_set_feedback(message, now_ms, duration_ms=1200):
-    """Display feedback message for a set duration (e.g., 'Caught!' or 'Missed!')"""
-    global fast_reflex_feedback, fast_reflex_feedback_until
-    fast_reflex_feedback = message
-    fast_reflex_feedback_until = now_ms + duration_ms
-
-
-def fast_reflex_schedule_next_spawn(now_ms):
-    """Schedule the next sprite to appear at a random time in the future"""
-    global fast_reflex_next_spawn_time
-    fast_reflex_next_spawn_time = now_ms + random.randint(FAST_REFLEX_MIN_GAP_MS, FAST_REFLEX_MAX_GAP_MS)
-
-
-def reset_fast_reflexes():
-    """Reset all fast-reflex game state to start a new game"""
-    global fast_reflex_next_spawn_time, fast_reflex_sprite_end_time, fast_reflex_current_sprite
-    global fast_reflex_current_is_bad, fast_reflex_bad_spawn_time, fast_reflex_rounds_completed
-    global fast_reflex_hits, fast_reflex_misses, fast_reflex_false_alarms, fast_reflex_score
-    global fast_reflex_last_reaction_ms, fast_reflex_feedback, fast_reflex_feedback_until, fast_reflex_game_over
-
-    now_ms = pygame.time.get_ticks()
-    fast_reflex_schedule_next_spawn(now_ms + 3000)
-    fast_reflex_sprite_end_time = None
-    fast_reflex_current_sprite = None
-    fast_reflex_current_is_bad = False
-    fast_reflex_bad_spawn_time = None
-    fast_reflex_rounds_completed = 0
-    fast_reflex_hits = 0
-    fast_reflex_misses = 0
-    fast_reflex_false_alarms = 0
-    fast_reflex_score = 0
-    fast_reflex_last_reaction_ms = None
-    fast_reflex_feedback = "Tap SPACE to catch anything that is not a fish to clean the ocean."
-    fast_reflex_feedback_until = now_ms + 3000
-    fast_reflex_game_over = False
-
-#return current page
 
     # When entering DDR state, immediately select a random arrow and reset feedback
     if new_state == STATE_DDR:
@@ -508,7 +548,6 @@ def reset_fast_reflexes():
 def current_page():
     return tutorial_sequence[current_page_index]
 
-#go to next page in tutorial
 def advance_tutorial():
     global current_page_index, last_space_time
     if current_page_index < len(tutorial_sequence) - 1:
@@ -517,11 +556,9 @@ def advance_tutorial():
         set_state(STATE_BETWEEN_GAMES)
     last_space_time = None
 
-#return current timer page
 def timer_guess_current_page():
     return timer_guess_sequence[timer_guess_page_index]
 
-#go to next timer page
 def advance_timer_guess():
     global timer_guess_page_index
     if timer_guess_page_index < len(timer_guess_sequence) - 1:
@@ -560,18 +597,68 @@ while running:
     current_time = pygame.time.get_ticks()
     elapsed = current_time - state_start_time
 
-    #end game
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-        #key press logic
         elif event.type == pygame.KEYDOWN:
 
-            # leave tutorial or game early by pressing ESC
+            if state == STATE_MATCHING and SDL2_MULTI_WINDOW_AVAILABLE and matching_window is not None:
+                if not is_matching_window_event(event):
+                    continue
+
+                if event.key == pygame.K_ESCAPE:
+                    set_state(STATE_BETWEEN_GAMES)
+                    continue
+
+                if event.key == pygame.K_SPACE and matching_game.done:
+                    set_state(STATE_BETWEEN_GAMES)
+                    continue
+
+                if event.key == pygame.K_SPACE and matching_game.pending_reveal_symbol is not None:
+                    if (
+                        matching_game.reveal_space_time is not None
+                        and (current_time - matching_game.reveal_space_time) <= DOUBLE_TAP_WINDOW_MS
+                    ):
+                        matching_game.confirm_pending_scan(current_time)
+                    else:
+                        matching_game.reveal_space_time = current_time
+                    continue
+
+                card_key_map = {
+                    pygame.K_1: 0,
+                    pygame.K_2: 1,
+                    pygame.K_3: 2,
+                    pygame.K_4: 3,
+                    pygame.K_5: 4,
+                    pygame.K_6: 5,
+                    pygame.K_7: 6,
+                    pygame.K_8: 7,
+                }
+                selected_index = card_key_map.get(event.key)
+                if selected_index is not None:
+                    matching_game.select(selected_index)
+                continue
+
+            elif state == STATE_MATCHING:
+                if event.key == pygame.K_ESCAPE:
+                    set_state(STATE_BETWEEN_GAMES)
+                elif event.key == pygame.K_SPACE and matching_game.done:
+                    set_state(STATE_BETWEEN_GAMES)
+                elif event.key == pygame.K_SPACE and matching_game.pending_reveal_symbol is not None:
+                    if (
+                        matching_game.reveal_space_time is not None
+                        and (current_time - matching_game.reveal_space_time) <= DOUBLE_TAP_WINDOW_MS
+                    ):
+                        matching_game.confirm_pending_scan(current_time)
+                    else:
+                        matching_game.reveal_space_time = current_time
+                elif pygame.K_1 <= event.key <= pygame.K_8:
+                    matching_game.select(event.key - pygame.K_1)
+                continue
+
             if event.key == pygame.K_ESCAPE:
                 set_state(STATE_BETWEEN_GAMES)
-            #tutorial logic
             if state == STATE_TUTORIAL:
                 page = current_page()
                 page_type = page["type"]
@@ -599,7 +686,7 @@ while running:
 
                     elif page_type == "result":
                         advance_tutorial()
-            # Handling switching between game modes
+
             elif state == STATE_BETWEEN_GAMES:
                 if event.key == pygame.K_1:
                     set_state(STATE_MATCHING)
@@ -629,49 +716,6 @@ while running:
                     elif page_type == "timer_result":
                         advance_timer_guess()
 
-            elif state == STATE_FAST_REFLEXES:
-                # Handle SPACE key presses during fast-reflex game
-                if event.key == pygame.K_SPACE:
-                    if fast_reflex_game_over:
-                        # Game is over - restart it
-                        reset_fast_reflexes()
-                    elif fast_reflex_current_sprite is None:
-                        # Player pressed SPACE but no sprite is on screen - penalize
-                        fast_reflex_false_alarms += 1
-                        fast_reflex_score = max(0, fast_reflex_score - 60)
-                        fast_reflex_set_feedback("Too early! No sprite on screen.", current_time)
-                    elif fast_reflex_current_is_bad:
-                        # Player pressed SPACE on a bad sprite (monster) - SUCCESS!
-                        # Calculate reaction time and award points: faster = more points
-                        reaction_ms = current_time - fast_reflex_bad_spawn_time
-                        points = max(100, 1300 - reaction_ms)  # Fast catches get ~1000+ points
-                        fast_reflex_hits += 1
-                        fast_reflex_score += points
-                        fast_reflex_last_reaction_ms = reaction_ms
-                        fast_reflex_rounds_completed += 1
-                        fast_reflex_set_feedback(f"Caught an object in {reaction_ms}ms (+{points})", current_time)
-                        fast_reflex_current_sprite = None
-                        fast_reflex_bad_spawn_time = None
-                        fast_reflex_sprite_end_time = None
-
-                        if fast_reflex_rounds_completed >= FAST_REFLEX_TOTAL_ROUNDS:
-                            fast_reflex_game_over = True
-                        else:
-                            fast_reflex_schedule_next_spawn(current_time)
-                    else:
-                        # Player pressed SPACE on a good sprite - MISTAKE!
-                        fast_reflex_false_alarms += 1
-                        fast_reflex_score = max(0, fast_reflex_score - 80)
-                        fast_reflex_rounds_completed += 1
-                        fast_reflex_set_feedback("You caught a fish on accident!", current_time)
-                        fast_reflex_current_sprite = None
-                        fast_reflex_bad_spawn_time = None
-                        fast_reflex_sprite_end_time = None
-
-                        if fast_reflex_rounds_completed >= FAST_REFLEX_TOTAL_ROUNDS:
-                            fast_reflex_game_over = True
-                        else:
-                            fast_reflex_schedule_next_spawn(current_time)
             elif state == STATE_DDR:
                 page = ddr_current_page()
 
@@ -737,48 +781,6 @@ while running:
         else:
             timer_guess_start_time = None
 
-    elif state == STATE_FAST_REFLEXES:
-        # Update fast-reflex game logic
-        if not fast_reflex_game_over:
-            # Check if it's time to spawn the next sprite
-            if fast_reflex_current_sprite is None and fast_reflex_next_spawn_time is not None and current_time >= fast_reflex_next_spawn_time:
-                # Randomly decide if this sprite is good or bad (monster)
-                show_bad_sprite = random.random() < FAST_REFLEX_BAD_CHANCE
-
-                if show_bad_sprite:
-                    # Spawn a bad sprite (monster) - player must catch with SPACE
-                    fast_reflex_current_sprite = random.choice(fast_reflex_bad_sprites)
-                    fast_reflex_current_is_bad = True
-                    fast_reflex_bad_spawn_time = current_time
-                else:
-                    # Spawn a good sprite - player should NOT press SPACE
-                    fast_reflex_current_sprite = random.choice(fast_reflex_good_sprites)
-                    fast_reflex_current_is_bad = False
-                    fast_reflex_bad_spawn_time = None
-
-                # Determine how long this sprite stays visible (1-4 seconds)
-                visible_ms = random.randint(FAST_REFLEX_MIN_VISIBLE_MS, FAST_REFLEX_MAX_VISIBLE_MS)
-                fast_reflex_sprite_end_time = current_time + visible_ms
-
-            # Check if current sprite has expired (time to remove it from screen)
-            elif fast_reflex_current_sprite is not None and current_time >= fast_reflex_sprite_end_time:
-                # Sprite expired - if it was a bad sprite, that's a miss
-                if fast_reflex_current_is_bad:
-                    fast_reflex_misses += 1
-                    fast_reflex_score = max(0, fast_reflex_score - 120)
-                    fast_reflex_set_feedback("You missed an object!", current_time)
-
-                fast_reflex_rounds_completed += 1
-                fast_reflex_current_sprite = None
-                fast_reflex_current_is_bad = False
-                fast_reflex_bad_spawn_time = None
-                fast_reflex_sprite_end_time = None
-
-                # Check if we've completed all 15 rounds
-                if fast_reflex_rounds_completed >= FAST_REFLEX_TOTAL_ROUNDS:
-                    fast_reflex_game_over = True
-                else:
-                    fast_reflex_schedule_next_spawn(current_time)
     elif state == STATE_DDR:
         page = ddr_current_page()
 
@@ -798,6 +800,11 @@ while running:
                         new_ddr_arrow()
                         ddr_feedback = None
 
+    elif state == STATE_MATCHING:
+        # Once complete, close the secondary board window and keep result UI on main screen.
+        if matching_game.done and matching_window is not None:
+            close_matching_window()
+
     # -----------------------------
     # DRAW
     # -----------------------------
@@ -805,8 +812,6 @@ while running:
 
     if state == STATE_CALIBRATING:
         text("Calibrating...", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
-
-    #state drawing
 
     elif state == STATE_TUTORIAL:
         page = current_page()
@@ -865,39 +870,25 @@ while running:
         pass  # blank screen on purpose
 
     elif state == STATE_MATCHING:
-        matching_game.draw(screen, current_time)
+        if matching_game.match_feedback_start > 0 and current_time < matching_game.match_feedback_start:
+            if matching_game.last_revealed_symbol is not None:
+                draw_sprite(matching_game.last_revealed_symbol, fit_to_screen=True)
+        elif current_time <= matching_game.match_feedback_until:
+            text("Match found!", 48, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 24)
+            text(matching_game.match_feedback_text, 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y + 20)
+        elif matching_game.done and matching_game.start_time is not None and matching_game.end_time is not None:
+            elapsed_s = (matching_game.end_time - matching_game.start_time) / 1000.0
+            text(f"Time: {elapsed_s:.2f}s", 48, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 10)
+        elif SDL2_MULTI_WINDOW_AVAILABLE and matching_renderer is not None:
+            if matching_game.last_revealed_symbol is not None:
+                draw_sprite(matching_game.last_revealed_symbol, fit_to_screen=True)
+        else:
+            text("Second window unavailable;", 28, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20)
+            text("showing matching game here.", 28, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y + 10)
+            matching_game.draw(screen, current_time)
 
     elif state == STATE_FAST_REFLEXES:
-        # Draw the fast-reflex game HUD and sprites
-        # Display round progress and scoring information at top of screen
-        rounds_text = f"Round {fast_reflex_rounds_completed}/{FAST_REFLEX_TOTAL_ROUNDS}"
-        score_text = f"Score: {fast_reflex_score}"
-        stats_text = f"Hits: {fast_reflex_hits}  Misses: {fast_reflex_misses}  False alarms: {fast_reflex_false_alarms}"
-
-        text(rounds_text, 24, COLOR_WHITE, SCREEN_CENTER_X, 24)
-        text(score_text, 26, COLOR_WHITE, SCREEN_CENTER_X, 52)
-        text(stats_text, 22, COLOR_WHITE, SCREEN_CENTER_X, 80)
-
-        # Draw the current sprite if one is on screen, with colored instruction text
-        if fast_reflex_current_sprite is not None:
-            draw_sprite(fast_reflex_current_sprite)
-
-        elif not fast_reflex_game_over:
-            # No sprite on screen - tell player to get ready for next one
-            text("Get ready...", 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
-
-        # Display feedback message if one is active (e.g., "Caught!", "Too early!")
-        if current_time <= fast_reflex_feedback_until and fast_reflex_feedback:
-            text(fast_reflex_feedback, 24, COLOR_WHITE, SCREEN_CENTER_X, HEIGHT - 58)
-
-        # Display the last reaction time achieved
-        if fast_reflex_last_reaction_ms is not None:
-            text(f"Last reaction: {fast_reflex_last_reaction_ms}ms", 22, COLOR_WHITE, SCREEN_CENTER_X, 108)
-
-        # Show game over message and restart instructions
-        if fast_reflex_game_over:
-            
-            text("Game Over - Press SPACE to play again", 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        text("TODO: FAST REFLEXES", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
 
     elif state == STATE_TIMER_GUESS:
         page = timer_guess_current_page()
@@ -966,7 +957,12 @@ while running:
                                 line_spacing=LINE_SPACING)
 
     pygame.display.flip()
+
+    if state == STATE_MATCHING:
+        draw_matching_window(current_time)
+
     clock.tick(60)
 
+close_matching_window()
 pygame.quit()
 sys.exit()
