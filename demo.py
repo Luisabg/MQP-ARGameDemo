@@ -361,7 +361,8 @@ def create_timer_guess_sequence(target_seconds):
 
 def create_ddr_sequence():
     sequence = []
-    sequence += paragraph_pages("Welcome to DDR! Press the arrow key that matches the arrow on screen!")
+    sequence += paragraph_pages("Welcome to DDR!")
+    sequence += paragraph_pages("Use 2 fingers to swipe on the touchpad in the direction that matches the arrow on screen!")
     sequence += paragraph_pages("You have 10 arrows. Good luck!")
     sequence.append({"type": "ddr_game"})
     sequence.append({"type": "ddr_result"})  # results page as different type so we can show score/time at end without needing to generate new random arrows
@@ -416,6 +417,7 @@ fast_reflex_feedback = ""                      # Message to show player ("Caught
 fast_reflex_feedback_until = 0                 # Milliseconds: when to stop showing feedback message
 # Game state
 fast_reflex_game_over = False                  # True when 15 rounds are completed
+
 # ddr state variables
 ddr_current_arrow = None
 ddr_feedback = None # hit or miss feedback
@@ -432,6 +434,10 @@ ddr_page_index = 0
 ddr_score = 0
 ddr_game_start_time = None
 ddr_total_time = None
+# for swiping
+swipe_start_x = None
+swipe_start_y = None
+SWIPE_MIN_DISTANCE = 50  # pixels = how far you need to swipe for it to count
 
 # -----------------------------
 # STATE HELPERS
@@ -683,24 +689,39 @@ while running:
                     if event.key == pygame.K_SPACE:
                         advance_ddr()
 
-                elif page["type"] == "ddr_game":
-                    arrow_key_map = {
-                        pygame.K_UP: "up",
-                        pygame.K_DOWN: "down",
-                        pygame.K_LEFT: "left",
-                        pygame.K_RIGHT: "right",
-                    }
-                    if event.key in arrow_key_map:
-                        pressed = arrow_key_map[event.key]
-                        if pressed == ddr_current_arrow:
-                            ddr_feedback = "hit"
-                        else:
-                            ddr_feedback = "miss"
-                        ddr_feedback_time = current_time
-
+                # elif page["type"] == "ddr_game":
+                #     arrow_key_map = {
+                #         pygame.K_UP: "up",
+                #         pygame.K_DOWN: "down",
+                #         pygame.K_LEFT: "left",
+                #         pygame.K_RIGHT: "right",
+                #     }
+                #     if event.key in arrow_key_map:
+                #         pressed = arrow_key_map[event.key]
+                #         if pressed == ddr_current_arrow:
+                #             ddr_feedback = "hit"
+                #         else:
+                #             ddr_feedback = "miss"
+                #         ddr_feedback_time = current_time
+                #
                 elif page["type"] == "ddr_result":
                     if event.key == pygame.K_SPACE:
                         advance_ddr()
+
+        elif event.type == pygame.MOUSEWHEEL:
+            if state == STATE_DDR:
+                page = ddr_current_page()
+                if page["type"] == "ddr_game":
+                    if abs(event.x) > abs(event.y):  # horizontal scroll
+                        direction = "right" if event.x < 0 else "left"
+                    else:  # vertical scroll
+                        direction = "up" if event.y < 0 else "down"
+
+                    if direction == ddr_current_arrow:
+                        ddr_feedback = "hit"
+                    else:
+                        ddr_feedback = "miss"
+                    ddr_feedback_time = current_time
 
     # -----------------------------
     # LOGIC
