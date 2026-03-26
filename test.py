@@ -168,9 +168,10 @@ class MatchingGame:
         self.reveal_space_time = None
         self.match_feedback_until = 0
         self.match_feedback_text = ""
-        self.MATCH_FEEDBACK_MS = 1500
+        self.MATCH_FEEDBACK_MS = 1000
         self.MATCH_MONSTER_PREVIEW_MS = 3000
         self.match_feedback_start = 0
+        self.first_scanned_symbol = None
 
     @property
     def done(self):
@@ -207,14 +208,16 @@ class MatchingGame:
 
         if self.first_scanned is None:
             self.first_scanned = scanned_index
+            self.first_scanned_symbol = self.symbols[scanned_index]
             return
 
         first = self.first_scanned
         second = scanned_index
-        if self.symbols[first] == self.symbols[second]:
+        if self.symbols[first] == self.symbols[second] and first != second:
             self.revealed[first] = True
             self.revealed[second] = True
             self.first_scanned = None
+            self.first_scanned_symbol = None
             self.matched_pairs += 1
             self.match_feedback_start = current_time + self.MATCH_MONSTER_PREVIEW_MS
             self.match_feedback_until = self.match_feedback_start + self.MATCH_FEEDBACK_MS
@@ -226,6 +229,7 @@ class MatchingGame:
             self.flash_card = first
             self.flash_start = current_time
             self.first_scanned = second
+            self.first_scanned_symbol = self.symbols[second]
 
     def update(self, current_time):
         if self.flash_card is not None:
@@ -270,9 +274,11 @@ class MatchingGame:
             screen.blit(num_surf, (rect.x + 6, rect.y + 5))
 
             # Sprite
-            if qr_visible:
+            is_first_scanned = (i == self.first_scanned)
+
+            if qr_visible or is_first_scanned or is_sel:
                 img = self.qr_card
-            elif face_up or is_sel or is_flash:
+            elif face_up or is_flash:
                 if show_revealed_faces:
                     img = self.face_images.get(self.symbols[i])
                 else:
@@ -301,6 +307,8 @@ class MatchingGame:
 
 
 matching_game = MatchingGame()
+
+matching_intro_index = 0
 matching_window = None
 matching_renderer = None
 matching_surface = None
@@ -380,6 +388,15 @@ def paragraph_pages(paragraph):
         max_lines_per_page=PARAGRAPH_MAX_LINES_PER_PAGE
     )
     return [{"type": "text", "lines": page} for page in pages]
+
+MATCHING_INTRO = []
+MATCHING_INTRO += paragraph_pages("Welcome to card matching!")
+MATCHING_INTRO += paragraph_pages(
+    "Scan a card's QR code to reveal its icon. "
+    "Then, scan another card to see if you've found the matching pair. "
+    "Keep scanning and setting aside pairs until you've matched them all."
+)
+MATCHING_INTRO += paragraph_pages("Choose 1-8 to flip a card and scan to begin")
 
 tutorial_sequence = []
 
@@ -525,6 +542,7 @@ def set_state(new_state):
 
     if new_state == STATE_MATCHING:
         matching_game.reset()
+        matching_intro_index = 0
         open_matching_window()
     
     if new_state == STATE_TIMER_GUESS:
@@ -604,7 +622,11 @@ while running:
         elif event.type == pygame.KEYDOWN:
 
             if state == STATE_MATCHING and SDL2_MULTI_WINDOW_AVAILABLE and matching_window is not None:
-                if not is_matching_window_event(event):
+                if matching_intro_index < len(MATCHING_INTRO):
+                    if event.key == pygame.K_ESCAPE:
+                        set_state(STATE_BETWEEN_GAMES)
+                    elif event.key == pygame.K_SPACE:
+                        matching_intro_index += 1
                     continue
 
                 if event.key == pygame.K_ESCAPE:
@@ -870,9 +892,10 @@ while running:
         pass  # blank screen on purpose
 
     elif state == STATE_MATCHING:
-        if matching_game.match_feedback_start > 0 and current_time < matching_game.match_feedback_start:
-            if matching_game.last_revealed_symbol is not None:
-                draw_sprite(matching_game.last_revealed_symbol, fit_to_screen=True)
+        if matching_intro_index < len(MATCHING_INTRO):
+            page = MATCHING_INTRO[matching_intro_index]
+            draw_multiline_text(page["lines"], TEXT_SIZE, COLOR_WHITE,
+                                SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
         elif current_time <= matching_game.match_feedback_until:
             text("Match found!", 48, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 24)
             text(matching_game.match_feedback_text, 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y + 20)
@@ -880,8 +903,8 @@ while running:
             elapsed_s = (matching_game.end_time - matching_game.start_time) / 1000.0
             text(f"Time: {elapsed_s:.2f}s", 48, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 10)
         elif SDL2_MULTI_WINDOW_AVAILABLE and matching_renderer is not None:
-            if matching_game.last_revealed_symbol is not None:
-                draw_sprite(matching_game.last_revealed_symbol, fit_to_screen=True)
+            if matching_game.first_scanned_symbol is not None:
+                draw_sprite(matching_game.first_scanned_symbol, fit_to_screen=True)
         else:
             text("Second window unavailable;", 28, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20)
             text("showing matching game here.", 28, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y + 10)
