@@ -452,6 +452,18 @@ def set_state(new_state):
         timer_guess_page_index = 0
     elif new_state == STATE_FAST_REFLEXES:
         reset_fast_reflexes()
+        # When entering DDR state, immediately select a random arrow and reset feedback
+    if new_state == STATE_DDR:
+        global ddr_feedback, ddr_feedback_time, ddr_moves_completed, ddr_sequence, ddr_page_index, ddr_score, ddr_game_start_time, ddr_total_time
+        ddr_sequence = create_ddr_sequence()
+        ddr_page_index = 0
+        ddr_feedback = None
+        ddr_feedback_time = None
+        ddr_moves_completed = 0
+        ddr_score = 0
+        ddr_game_start_time = None
+        ddr_total_time = None
+        new_ddr_arrow()
 
 
 def fast_reflex_set_feedback(message, now_ms, duration_ms=1200):
@@ -492,18 +504,7 @@ def reset_fast_reflexes():
 
 #return current page
 
-    # When entering DDR state, immediately select a random arrow and reset feedback
-    if new_state == STATE_DDR:
-        global ddr_feedback, ddr_feedback_time, ddr_moves_completed, ddr_sequence, ddr_page_index, ddr_score, ddr_game_start_time, ddr_total_time
-        ddr_sequence = create_ddr_sequence()
-        ddr_page_index = 0
-        ddr_feedback = None
-        ddr_feedback_time = None
-        ddr_moves_completed = 0
-        ddr_score = 0
-        ddr_game_start_time = None
-        ddr_total_time = None
-        new_ddr_arrow()
+
 
 def current_page():
     return tutorial_sequence[current_page_index]
