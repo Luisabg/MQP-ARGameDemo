@@ -14,6 +14,10 @@ WIDTH, HEIGHT = 640, 400
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("ARcade")
 
+#bg_image = pygame.image.load("background/glasses_background.png")
+#.convert()
+
+
 # -----------------------------
 # LAYOUT / STYLE
 # -----------------------------
@@ -31,6 +35,8 @@ FAST_REFLEX_MAX_GAP_MS = 1800     # Maximum milliseconds to wait before next spr
 # Controls how long each sprite stays visible on screen
 FAST_REFLEX_MIN_VISIBLE_MS = 1000 # Sprite visible for at least 1 second
 FAST_REFLEX_MAX_VISIBLE_MS = 3000 # Sprite visible for at most 4 seconds
+# Controls how long to show the opening instruction before switching to "Get ready..."
+FAST_REFLEX_INSTRUCTION_MS = 3000
 # Gameplay difficulty settings
 FAST_REFLEX_BAD_CHANCE = 0.4      # 40% chance a sprite is "bad" (monster) vs "good"
 FAST_REFLEX_TOTAL_ROUNDS = 15     # Total number of rounds before game ends
@@ -411,10 +417,7 @@ fast_reflex_hits = 0                           # Number of bad sprites successfu
 fast_reflex_misses = 0                         # Number of bad sprites that expired without being caught
 fast_reflex_false_alarms = 0                   # Number of times player pressed SPACE on good sprites or empty screen
 fast_reflex_score = 0                          # Total points earned (faster catches = higher score)
-fast_reflex_last_reaction_ms = None            # Reaction time in ms for most recent catch
-# Feedback display
-fast_reflex_feedback = ""                      # Message to show player ("Caught!", "Too early!", etc.)
-fast_reflex_feedback_until = 0                 # Milliseconds: when to stop showing feedback message
+fast_reflex_instruction_until = 0              # Milliseconds: when to stop showing opening instruction text
 # Game state
 fast_reflex_game_over = False                  # True when 15 rounds are completed
 
@@ -470,13 +473,6 @@ def set_state(new_state):
         new_ddr_arrow()
 
 
-def fast_reflex_set_feedback(message, now_ms, duration_ms=1200):
-    """Display feedback message for a set duration (e.g., 'Caught!' or 'Missed!')"""
-    global fast_reflex_feedback, fast_reflex_feedback_until
-    fast_reflex_feedback = message
-    fast_reflex_feedback_until = now_ms + duration_ms
-
-
 def fast_reflex_schedule_next_spawn(now_ms):
     """Schedule the next sprite to appear at a random time in the future"""
     global fast_reflex_next_spawn_time
@@ -488,7 +484,7 @@ def reset_fast_reflexes():
     global fast_reflex_next_spawn_time, fast_reflex_sprite_end_time, fast_reflex_current_sprite
     global fast_reflex_current_is_bad, fast_reflex_bad_spawn_time, fast_reflex_rounds_completed
     global fast_reflex_hits, fast_reflex_misses, fast_reflex_false_alarms, fast_reflex_score
-    global fast_reflex_last_reaction_ms, fast_reflex_feedback, fast_reflex_feedback_until, fast_reflex_game_over
+    global fast_reflex_instruction_until, fast_reflex_game_over
 
     now_ms = pygame.time.get_ticks()
     fast_reflex_schedule_next_spawn(now_ms + 3000)
@@ -501,9 +497,8 @@ def reset_fast_reflexes():
     fast_reflex_misses = 0
     fast_reflex_false_alarms = 0
     fast_reflex_score = 0
-    fast_reflex_last_reaction_ms = None
-    fast_reflex_feedback = "Tap SPACE to catch anything that is not a fish to clean the ocean."
-    fast_reflex_feedback_until = now_ms + 3000
+    # Show controls briefly before falling back to "Get ready..." while waiting for spawns.
+    fast_reflex_instruction_until = now_ms + FAST_REFLEX_INSTRUCTION_MS
     fast_reflex_game_over = False
 
 #return current page
@@ -565,6 +560,8 @@ while running:
     current_time = pygame.time.get_ticks()
     elapsed = current_time - state_start_time
 
+    # screen.blit(bg_image, (0, 0))
+    # pygame.display.update()
     #end game
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -633,12 +630,11 @@ while running:
 
                     elif page_type == "timer_result":
                         advance_timer_guess()
-                 #######################################################################
             elif state ==  STATE_MATCHING:
                 if pygame.K_1 <= event.key < + pygame.K_9:
                     index = event.key - pygame.K_1
                     matching_game.select(index)
-                #######################################################################
+
             elif state == STATE_FAST_REFLEXES:
                 # Handle SPACE key presses during fast-reflex game
                 if event.key == pygame.K_SPACE:
@@ -649,7 +645,6 @@ while running:
                         # Player pressed SPACE but no sprite is on screen - penalize
                         fast_reflex_false_alarms += 1
                         fast_reflex_score = max(0, fast_reflex_score - 60)
-                        fast_reflex_set_feedback("Too early! No sprite on screen.", current_time)
                     elif fast_reflex_current_is_bad:
                         # Player pressed SPACE on a bad sprite (monster) - SUCCESS!
                         # Calculate reaction time and award points: faster = more points
@@ -657,9 +652,7 @@ while running:
                         points = max(100, 1300 - reaction_ms)  # Fast catches get ~1000+ points
                         fast_reflex_hits += 1
                         fast_reflex_score += points
-                        fast_reflex_last_reaction_ms = reaction_ms
                         fast_reflex_rounds_completed += 1
-                        fast_reflex_set_feedback(f"Caught an object in {reaction_ms}ms (+{points})", current_time)
                         fast_reflex_current_sprite = None
                         fast_reflex_bad_spawn_time = None
                         fast_reflex_sprite_end_time = None
@@ -673,7 +666,6 @@ while running:
                         fast_reflex_false_alarms += 1
                         fast_reflex_score = max(0, fast_reflex_score - 80)
                         fast_reflex_rounds_completed += 1
-                        fast_reflex_set_feedback("You caught a fish on accident!", current_time)
                         fast_reflex_current_sprite = None
                         fast_reflex_bad_spawn_time = None
                         fast_reflex_sprite_end_time = None
@@ -791,7 +783,6 @@ while running:
                 if fast_reflex_current_is_bad:
                     fast_reflex_misses += 1
                     fast_reflex_score = max(0, fast_reflex_score - 120)
-                    fast_reflex_set_feedback("You missed an object!", current_time)
 
                 fast_reflex_rounds_completed += 1
                 fast_reflex_current_sprite = None
@@ -893,36 +884,24 @@ while running:
         matching_game.draw(screen, current_time)
 
     elif state == STATE_FAST_REFLEXES:
-        # Draw the fast-reflex game HUD and sprites
-        # Display round progress and scoring information at top of screen
+        # Draw only the fast-reflex HUD and active sprite
         rounds_text = f"Round {fast_reflex_rounds_completed}/{FAST_REFLEX_TOTAL_ROUNDS}"
         score_text = f"Score: {fast_reflex_score}"
-        stats_text = f"Hits: {fast_reflex_hits}  Misses: {fast_reflex_misses}  False alarms: {fast_reflex_false_alarms}"
+        if current_time >= fast_reflex_instruction_until :
+            text(rounds_text, 24, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 90)
+            text(score_text, 26, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 45)
 
-        text(rounds_text, 24, COLOR_WHITE, SCREEN_CENTER_X, 24)
-        text(score_text, 26, COLOR_WHITE, SCREEN_CENTER_X, 52)
-        text(stats_text, 22, COLOR_WHITE, SCREEN_CENTER_X, 80)
-
-        # Draw the current sprite if one is on screen, with colored instruction text
+        # Draw sprite only when one is active
         if fast_reflex_current_sprite is not None:
             draw_sprite(fast_reflex_current_sprite)
-
         elif not fast_reflex_game_over:
-            # No sprite on screen - tell player to get ready for next one
-            text("Get ready...", 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+            # Show instruction first, then "Get ready..." while no sprite is on screen.
+            if current_time < fast_reflex_instruction_until:
+                text("Tap SPACE to catch anything that is not a fish to clean the ocean.", 25, COLOR_WHITE,
+                     SCREEN_CENTER_X, SCREEN_CENTER_Y)
+            else:
+                text("Get ready...", 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
 
-        # Display feedback message if one is active (e.g., "Caught!", "Too early!")
-        if current_time <= fast_reflex_feedback_until and fast_reflex_feedback:
-            text(fast_reflex_feedback, 24, COLOR_WHITE, SCREEN_CENTER_X, HEIGHT - 58)
-
-        # Display the last reaction time achieved
-        if fast_reflex_last_reaction_ms is not None:
-            text(f"Last reaction: {fast_reflex_last_reaction_ms}ms", 22, COLOR_WHITE, SCREEN_CENTER_X, 108)
-
-        # Show game over message and restart instructions
-        if fast_reflex_game_over:
-            
-            text("Game Over - Press SPACE to play again", 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
 
     elif state == STATE_TIMER_GUESS:
         page = timer_guess_current_page()
