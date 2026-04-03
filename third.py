@@ -39,6 +39,7 @@ FAST_REFLEX_MIN_VISIBLE_MS = 1000
 FAST_REFLEX_MAX_VISIBLE_MS = 3000
 FAST_REFLEX_BAD_CHANCE = 0.4
 FAST_REFLEX_TOTAL_ROUNDS = 15
+FAST_REFLEX_END_SCREEN_MS = 2200
 
 PARAGRAPH_MAX_CHARS_PER_LINE = 32
 PARAGRAPH_MAX_LINES_PER_PAGE = 3
@@ -172,7 +173,7 @@ def scale_to_fit(image, max_w, max_h, smooth=True):
     return pygame.transform.scale(image, new_size)
 
 
-def draw_sprite(filename, fit_to_screen=False, smooth=True):
+def draw_sprite(filename, fit_to_screen=False, smooth=True, fill_screen=False):
     path = os.path.join("sprites", filename)
 
     try:
@@ -181,7 +182,13 @@ def draw_sprite(filename, fit_to_screen=False, smooth=True):
         text(f"Missing sprite: {filename}", 24, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
         return
 
-    if fit_to_screen:
+    if fill_screen:
+        # Force sprite to occupy the full screen area for game states that need edge-to-edge visuals.
+        if smooth:
+            image = pygame.transform.smoothscale(image, (WIDTH, HEIGHT))
+        else:
+            image = pygame.transform.scale(image, (WIDTH, HEIGHT))
+    elif fit_to_screen:
         img_w, img_h = image.get_size()
         scale_factor = min(WIDTH / img_w, HEIGHT / img_h)
         new_size = (int(img_w * scale_factor), int(img_h * scale_factor))
@@ -634,6 +641,9 @@ fast_reflex_last_reaction_ms = None
 fast_reflex_feedback = ""
 fast_reflex_feedback_until = 0
 fast_reflex_game_over = False
+fast_reflex_waiting_to_start = True
+fast_reflex_intro_sprite = None
+fast_reflex_game_over_time = None
 
 
 def fast_reflex_set_feedback(message, now_ms, duration_ms=1200):
@@ -652,9 +662,10 @@ def reset_fast_reflexes():
     global fast_reflex_current_is_bad, fast_reflex_bad_spawn_time, fast_reflex_rounds_completed
     global fast_reflex_hits, fast_reflex_misses, fast_reflex_false_alarms, fast_reflex_score
     global fast_reflex_last_reaction_ms, fast_reflex_feedback, fast_reflex_feedback_until, fast_reflex_game_over
+    global fast_reflex_waiting_to_start, fast_reflex_intro_sprite, fast_reflex_game_over_time
 
     now_ms = pygame.time.get_ticks()
-    fast_reflex_schedule_next_spawn(now_ms + 3000)
+    fast_reflex_next_spawn_time = None
     fast_reflex_sprite_end_time = None
     fast_reflex_current_sprite = None
     fast_reflex_current_is_bad = False
@@ -665,9 +676,12 @@ def reset_fast_reflexes():
     fast_reflex_false_alarms = 0
     fast_reflex_score = 0
     fast_reflex_last_reaction_ms = None
-    fast_reflex_feedback = "Tap SPACE to catch anything that is not a fish to clean the ocean."
-    fast_reflex_feedback_until = now_ms + 3000
+    fast_reflex_feedback = ""
+    fast_reflex_feedback_until = now_ms
     fast_reflex_game_over = False
+    fast_reflex_waiting_to_start = True
+    fast_reflex_intro_sprite = None
+    fast_reflex_game_over_time = None
 
 
 # -----------------------------
@@ -972,8 +986,12 @@ while running:
 
             elif state == STATE_FAST_REFLEXES:
                 if event.key == pygame.K_SPACE:
-                    if fast_reflex_game_over:
-                        reset_fast_reflexes()
+                    if fast_reflex_waiting_to_start:
+                        fast_reflex_waiting_to_start = False
+                        fast_reflex_intro_sprite = None
+                        fast_reflex_schedule_next_spawn(current_time)
+                    elif fast_reflex_game_over:
+                        pass
                     elif fast_reflex_current_sprite is None:
                         fast_reflex_false_alarms += 1
                         fast_reflex_score = max(0, fast_reflex_score - 60)
@@ -992,6 +1010,7 @@ while running:
 
                         if fast_reflex_rounds_completed >= FAST_REFLEX_TOTAL_ROUNDS:
                             fast_reflex_game_over = True
+                            fast_reflex_game_over_time = current_time
                         else:
                             fast_reflex_schedule_next_spawn(current_time)
                     else:
@@ -1005,6 +1024,7 @@ while running:
 
                         if fast_reflex_rounds_completed >= FAST_REFLEX_TOTAL_ROUNDS:
                             fast_reflex_game_over = True
+                            fast_reflex_game_over_time = current_time
                         else:
                             fast_reflex_schedule_next_spawn(current_time)
 
@@ -1067,7 +1087,9 @@ while running:
             timer_guess_start_time = None
 
     elif state == STATE_FAST_REFLEXES:
-        if not fast_reflex_game_over:
+        if fast_reflex_waiting_to_start:
+            pass
+        elif not fast_reflex_game_over:
             if fast_reflex_current_sprite is None and fast_reflex_next_spawn_time is not None and current_time >= fast_reflex_next_spawn_time:
                 show_bad_sprite = random.random() < FAST_REFLEX_BAD_CHANCE
                 if show_bad_sprite:
@@ -1096,8 +1118,11 @@ while running:
 
                 if fast_reflex_rounds_completed >= FAST_REFLEX_TOTAL_ROUNDS:
                     fast_reflex_game_over = True
+                    fast_reflex_game_over_time = current_time
                 else:
                     fast_reflex_schedule_next_spawn(current_time)
+        elif fast_reflex_game_over_time is not None and (current_time - fast_reflex_game_over_time) >= FAST_REFLEX_END_SCREEN_MS:
+            set_state(STATE_BETWEEN_GAMES)
 
     elif state == STATE_DDR:
         page = ddr_current_page()
@@ -1183,27 +1208,24 @@ while running:
             matching_game.draw(screen, current_time)
 
     elif state == STATE_FAST_REFLEXES:
-        rounds_text = f"Round {fast_reflex_rounds_completed}/{FAST_REFLEX_TOTAL_ROUNDS}"
-        score_text = f"Score: {fast_reflex_score}"
-        stats_text = f"Hits: {fast_reflex_hits}  Misses: {fast_reflex_misses}  False alarms: {fast_reflex_false_alarms}"
-
-        text(rounds_text, 24, COLOR_WHITE, SCREEN_CENTER_X, 24)
-        text(score_text, 26, COLOR_WHITE, SCREEN_CENTER_X, 52)
-        text(stats_text, 22, COLOR_WHITE, SCREEN_CENTER_X, 80)
-
-        if fast_reflex_current_sprite is not None:
-            draw_sprite(fast_reflex_current_sprite)
-        elif not fast_reflex_game_over:
-            text("Get ready...", 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
-
-        if current_time <= fast_reflex_feedback_until and fast_reflex_feedback:
-            text(fast_reflex_feedback, 24, COLOR_WHITE, SCREEN_CENTER_X, HEIGHT - 58)
-
-        if fast_reflex_last_reaction_ms is not None:
-            text(f"Last reaction: {fast_reflex_last_reaction_ms}ms", 22, COLOR_WHITE, SCREEN_CENTER_X, 108)
-
-        if fast_reflex_game_over:
-            text("Game Over - Press SPACE to play again", 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        if fast_reflex_waiting_to_start:
+            instruction_lines = split_paragraph_into_pages(
+                "Catch anything that is not a fish. Press SPACE to begin.",
+                max_chars_per_line=PARAGRAPH_MAX_CHARS_PER_LINE,
+                max_lines_per_page=PARAGRAPH_MAX_LINES_PER_PAGE,
+            )[0]
+            draw_multiline_text(
+                instruction_lines,
+                TEXT_SIZE,
+                COLOR_WHITE,
+                SCREEN_CENTER_X,
+                SCREEN_CENTER_Y,
+                line_spacing=LINE_SPACING,
+            )
+        elif fast_reflex_game_over:
+            text(f"Score: {fast_reflex_score}", 54, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        elif fast_reflex_current_sprite is not None:
+            draw_sprite(fast_reflex_current_sprite, fill_screen=True, smooth=False)
 
     elif state == STATE_TIMER_GUESS:
         page = timer_guess_current_page()
