@@ -27,7 +27,7 @@ WINDOW_WIDTH, WINDOW_HEIGHT = 1024, 640 # bigger window for background
 pygame.display.set_caption("ARcade")
 
 screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-canvas = pygame.Surface((CANVAS_WIDTH, CANVAS_HEIGHT))  # all game draws go here
+canvas = pygame.Surface((CANVAS_WIDTH, CANVAS_HEIGHT), pygame.SRCALPHA)  # all game draws go here
 
 background = pygame.image.load(os.path.join("sprites", "GlassesBackground.png")).convert()
 background = pygame.transform.scale(background, (WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -185,18 +185,16 @@ def scale_to_fit(image, max_w, max_h, smooth=True):
         return pygame.transform.smoothscale(image, new_size)
     return pygame.transform.scale(image, new_size)
 
-
-def draw_sprite(filename, fit_to_screen=False, smooth=True, fill_screen=False):
+def draw_sprite(filename, fit_to_screen=False, smooth=True, fill_screen=False, scale=1.0):
     path = os.path.join("sprites", filename)
 
     try:
         image = pygame.image.load(path).convert_alpha()
     except (pygame.error, FileNotFoundError):
-        text(f"Missing sprite: {filename}", 24, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        text(f"Missing sprite: {filename}", 24, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y)
         return
 
     if fill_screen:
-        # Force sprite to occupy the full screen area for game states that need edge-to-edge visuals.
         if smooth:
             image = pygame.transform.smoothscale(image, (CANVAS_WIDTH, CANVAS_HEIGHT))
         else:
@@ -210,9 +208,14 @@ def draw_sprite(filename, fit_to_screen=False, smooth=True, fill_screen=False):
         else:
             image = pygame.transform.scale(image, new_size)
 
+    # apply scale after everything else
+    if scale != 1.0:
+        img_w, img_h = image.get_size()
+        new_size = (int(img_w * scale), int(img_h * scale))
+        image = pygame.transform.scale(image, new_size)
+
     rect = image.get_rect(center=(SCREEN_CENTER_X, SCREEN_CENTER_Y))
     canvas.blit(image, rect)
-
 
 def load_card_sprite(filename):
     path = os.path.join("sprites", filename)
@@ -444,7 +447,7 @@ class MatchingGame:
                 img_rect = img.get_rect(center=rect.center)
                 surface.blit(img, img_rect)
             else:
-                fb = font_label.render(self.symbols[i], True, COLOR_WHITE)
+                fb = font_label.render(self.symbols[i], True, COLOR_BLACK)
                 surface.blit(fb, fb.get_rect(center=rect.center))
 
         below_y = GRID_Y + GRID_H + 24
@@ -556,7 +559,7 @@ def draw_tutorial_qr_window():
     tutorial_qr_surface.fill(COLOR_BLACK)
     qr_raw = load_raw_sprite(TUTORIAL_QR_FILE)
     if qr_raw is None:
-        surface_text(tutorial_qr_surface, f"Missing sprite: {TUTORIAL_QR_FILE}", 24, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        surface_text(tutorial_qr_surface, f"Missing sprite: {TUTORIAL_QR_FILE}", 24, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y)
     else:
         qr_image = scale_to_fit(qr_raw, CANVAS_WIDTH - 40, CANVAS_HEIGHT - 70, smooth=True)
         if qr_image is not None:
@@ -589,11 +592,11 @@ def draw_menu_window():
         return
 
     menu_surface.fill(COLOR_BLACK)
-    surface_text(menu_surface, "Tap 1-4 to select a QR code to scan", 22, COLOR_WHITE, SCREEN_CENTER_X, 26)
+    surface_text(menu_surface, "Tap 1-4 to select a QR code to scan", 22, COLOR_BLACK, SCREEN_CENTER_X, 26)
 
     qr_raw = load_raw_sprite(MENU_QR_FILE)
     if qr_raw is None:
-        surface_text(menu_surface, f"Missing sprite: {MENU_QR_FILE}", 24, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        surface_text(menu_surface, f"Missing sprite: {MENU_QR_FILE}", 24, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y)
         present_surface(menu_renderer, menu_surface)
         return
 
@@ -1168,16 +1171,16 @@ while running:
     canvas.fill((0, 0, 0, 0)) # clear canvas
 
     if state == STATE_CALIBRATING:
-        text("Calibrating...", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+        text("Calibrating...", TEXT_SIZE, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y)
 
     elif state == STATE_TUTORIAL:
         page = current_page()
         page_type = page["type"]
 
         if page_type == "text":
-            draw_multiline_text(page["lines"], TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
+            draw_multiline_text(page["lines"], TEXT_SIZE, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
         elif page_type == "sprite":
-            draw_sprite(page["filename"])
+            draw_sprite(page["filename"], scale=0.6)
         elif page_type == "qr":
             pass
         elif page_type == "countdown":
@@ -1190,9 +1193,9 @@ while running:
                 countdown_text = "1"
             else:
                 countdown_text = "GO!"
-            text(countdown_text, 72, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+            text(countdown_text, 72, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y)
         elif page_type == "timing":
-            text("", 48, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20)
+            text("", 48, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20)
         elif page_type == "result":
             result_message = f"Your time was {measured_time_seconds:.2f} seconds"
             result_lines = split_paragraph_into_pages(
@@ -1200,7 +1203,7 @@ while running:
                 max_chars_per_line=PARAGRAPH_MAX_CHARS_PER_LINE,
                 max_lines_per_page=PARAGRAPH_MAX_LINES_PER_PAGE,
             )[0]
-            draw_multiline_text(result_lines, TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
+            draw_multiline_text(result_lines, TEXT_SIZE, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
 
     elif state == STATE_BETWEEN_GAMES:
         pass
@@ -1208,19 +1211,19 @@ while running:
     elif state == STATE_MATCHING:
         if matching_intro_index < len(MATCHING_INTRO):
             page = MATCHING_INTRO[matching_intro_index]
-            draw_multiline_text(page["lines"], TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
+            draw_multiline_text(page["lines"], TEXT_SIZE, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
         elif current_time <= matching_game.match_feedback_until:
-            text("Match found!", 48, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 24)
-            text(matching_game.match_feedback_text, 36, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y + 20)
+            text("Match found!", 48, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y - 24)
+            text(matching_game.match_feedback_text, 36, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y + 20)
         elif matching_game.done and matching_game.start_time is not None and matching_game.end_time is not None:
             elapsed_s = (matching_game.end_time - matching_game.start_time) / 1000.0
-            text(f"Time: {elapsed_s:.2f}s", 48, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 10)
+            text(f"Time: {elapsed_s:.2f}s", 48, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y - 10)
         elif SDL2_MULTI_WINDOW_AVAILABLE and matching_renderer is not None:
             if matching_game.first_scanned_symbol is not None:
-                draw_sprite(matching_game.first_scanned_symbol, fit_to_screen=True)
+                draw_sprite(matching_game.first_scanned_symbol, fit_to_screen=True, smooth=False, scale=0.4)
         else:
-            text("Second window unavailable;", 28, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20)
-            text("showing matching game here.", 28, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y + 10)
+            text("Second window unavailable;", 28, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20)
+            text("showing matching game here.", 28, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y + 10)
             matching_game.draw(screen, current_time)
 
     elif state == STATE_FAST_REFLEXES:
@@ -1233,26 +1236,26 @@ while running:
             draw_multiline_text(
                 instruction_lines,
                 TEXT_SIZE,
-                COLOR_WHITE,
+                COLOR_BLACK,
                 SCREEN_CENTER_X,
                 SCREEN_CENTER_Y,
                 line_spacing=LINE_SPACING,
             )
         elif fast_reflex_game_over:
-            text(f"Score: {fast_reflex_score}", 54, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+            text(f"Score: {fast_reflex_score}", 54, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y)
         elif fast_reflex_current_sprite is not None:
-            draw_sprite(fast_reflex_current_sprite, fill_screen=True, smooth=False)
+            draw_sprite(fast_reflex_current_sprite, fit_to_screen=True, smooth=False, scale=0.35)
 
     elif state == STATE_TIMER_GUESS:
         page = timer_guess_current_page()
         page_type = page["type"]
 
         if page_type == "text":
-            draw_multiline_text(page["lines"], TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
+            draw_multiline_text(page["lines"], TEXT_SIZE, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
         elif page_type == "timer_number":
-            text(str(page["number"]), 96, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
+            text(str(page["number"]), 96, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y)
         elif page_type == "timer_blank":
-            text("", 48, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20)
+            text("", 48, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20)
         elif page_type == "timer_result":
             accuracy = abs(measured_time_seconds - timer_guess_target)
             result_message = f"Target: {timer_guess_target}s Your time: {measured_time_seconds:.2f}s Difference: {accuracy:.2f}s"
@@ -1261,19 +1264,19 @@ while running:
                 max_chars_per_line=PARAGRAPH_MAX_CHARS_PER_LINE,
                 max_lines_per_page=PARAGRAPH_MAX_LINES_PER_PAGE,
             )[0]
-            draw_multiline_text(result_lines, TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
+            draw_multiline_text(result_lines, TEXT_SIZE, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
 
     elif state == STATE_DDR:
         page = ddr_current_page()
         if page["type"] == "text":
-            draw_multiline_text(page["lines"], TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
+            draw_multiline_text(page["lines"], TEXT_SIZE, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
         elif page["type"] == "ddr_game":
             if ddr_feedback == "hit":
-                draw_sprite("check.png")
+                draw_sprite("check.png", scale=0.6)
             elif ddr_feedback == "miss":
-                draw_sprite("x.png", fit_to_screen=True, smooth=False)
+                draw_sprite("x.png", fit_to_screen=True, smooth=False, scale=0.6)
             else:
-                draw_sprite(ddr_current_sprite, fit_to_screen=True, smooth=False)
+                draw_sprite(ddr_current_sprite, fit_to_screen=True, smooth=False, scale=0.45)
         elif page["type"] == "ddr_result":
             result_message = f"Score: {ddr_score}/10  Time: {ddr_total_time:.1f}s"
             result_lines = split_paragraph_into_pages(
@@ -1281,7 +1284,7 @@ while running:
                 max_chars_per_line=PARAGRAPH_MAX_CHARS_PER_LINE,
                 max_lines_per_page=PARAGRAPH_MAX_LINES_PER_PAGE,
             )[0]
-            draw_multiline_text(result_lines, TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
+            draw_multiline_text(result_lines, TEXT_SIZE, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
 
     if state == STATE_TUTORIAL and current_page()["type"] == "qr":
         draw_tutorial_qr_window()
