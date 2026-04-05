@@ -19,15 +19,28 @@ clock = pygame.time.Clock()
 # -----------------------------
 # PYGAME SCREEN SETUP
 # -----------------------------
-WIDTH, HEIGHT = 640, 400
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
+
+CANVAS_WIDTH, CANVAS_HEIGHT = 640, 400 # game content stays this size
+WINDOW_WIDTH, WINDOW_HEIGHT = 1024, 640 # bigger window for background
+# WIDTH, HEIGHT = 640, 400
+# screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("ARcade")
+
+screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+canvas = pygame.Surface((CANVAS_WIDTH, CANVAS_HEIGHT))  # all game draws go here
+
+background = pygame.image.load(os.path.join("sprites", "GlassesBackground.png")).convert()
+background = pygame.transform.scale(background, (WINDOW_WIDTH, WINDOW_HEIGHT))
 
 # -----------------------------
 # LAYOUT / STYLE
 # -----------------------------
-SCREEN_CENTER_X = WIDTH // 2
-SCREEN_CENTER_Y = HEIGHT // 2
+# offset to center the canvas in the window
+CANVAS_X = (WINDOW_WIDTH - CANVAS_WIDTH) // 2
+CANVAS_Y = (WINDOW_HEIGHT - CANVAS_HEIGHT) // 2
+
+SCREEN_CENTER_X = CANVAS_WIDTH // 2
+SCREEN_CENTER_Y = CANVAS_HEIGHT // 2
 
 CALIBRATION_DURATION_MS = 10000
 COUNTDOWN_STEP_MS = 1000
@@ -66,8 +79,8 @@ CARD_H = 110
 CARD_PAD = 16
 GRID_W = CARD_COLS * CARD_W + (CARD_COLS - 1) * CARD_PAD
 GRID_H = CARD_ROWS * CARD_H + (CARD_ROWS - 1) * CARD_PAD
-GRID_X = (WIDTH - GRID_W) // 2
-GRID_Y = (HEIGHT - GRID_H) // 2 + 10
+GRID_X = (CANVAS_WIDTH - GRID_W) // 2
+GRID_Y = (CANVAS_HEIGHT - GRID_H) // 2 + 10
 
 MENU_ITEMS = [
     {"label": "Matching", "state": "matching"},
@@ -83,7 +96,7 @@ MENU_PAD_X = 20
 MENU_PAD_Y = 18
 MENU_GRID_W = MENU_COLS * MENU_TILE_W + (MENU_COLS - 1) * MENU_PAD_X
 MENU_GRID_H = MENU_ROWS * MENU_TILE_H + (MENU_ROWS - 1) * MENU_PAD_Y
-MENU_GRID_X = (WIDTH - MENU_GRID_W) // 2
+MENU_GRID_X = (CANVAS_WIDTH - MENU_GRID_W) // 2
 MENU_GRID_Y = 58
 MENU_QR_SIZE = 104
 MENU_QR_FILE = "SquareQRCODE.png"
@@ -97,7 +110,7 @@ def text(message, size, color, x, y):
     font = pygame.font.SysFont(None, size)
     text_surface = font.render(message, True, color)
     text_rect = text_surface.get_rect(center=(x, y))
-    screen.blit(text_surface, text_rect)
+    canvas.blit(text_surface, text_rect)
 
 
 def draw_multiline_text(lines, size, color, center_x, center_y, line_spacing=35):
@@ -109,7 +122,7 @@ def draw_multiline_text(lines, size, color, center_x, center_y, line_spacing=35)
         text_surface = font.render(line, True, color)
         line_y = first_line_y + i * line_spacing
         text_rect = text_surface.get_rect(center=(center_x, line_y))
-        screen.blit(text_surface, text_rect)
+        canvas.blit(text_surface, text_rect)
 
 
 def surface_text(surface, message, size, color, x, y):
@@ -185,12 +198,12 @@ def draw_sprite(filename, fit_to_screen=False, smooth=True, fill_screen=False):
     if fill_screen:
         # Force sprite to occupy the full screen area for game states that need edge-to-edge visuals.
         if smooth:
-            image = pygame.transform.smoothscale(image, (WIDTH, HEIGHT))
+            image = pygame.transform.smoothscale(image, (CANVAS_WIDTH, CANVAS_HEIGHT))
         else:
-            image = pygame.transform.scale(image, (WIDTH, HEIGHT))
+            image = pygame.transform.scale(image, (CANVAS_WIDTH, CANVAS_HEIGHT))
     elif fit_to_screen:
         img_w, img_h = image.get_size()
-        scale_factor = min(WIDTH / img_w, HEIGHT / img_h)
+        scale_factor = min(CANVAS_WIDTH / img_w, CANVAS_HEIGHT / img_h)
         new_size = (int(img_w * scale_factor), int(img_h * scale_factor))
         if smooth:
             image = pygame.transform.smoothscale(image, new_size)
@@ -198,7 +211,7 @@ def draw_sprite(filename, fit_to_screen=False, smooth=True, fill_screen=False):
             image = pygame.transform.scale(image, new_size)
 
     rect = image.get_rect(center=(SCREEN_CENTER_X, SCREEN_CENTER_Y))
-    screen.blit(image, rect)
+    canvas.blit(image, rect)
 
 
 def load_card_sprite(filename):
@@ -237,9 +250,9 @@ def event_window_id(event):
 def create_secondary_window(title, position):
     if not SDL2_MULTI_WINDOW_AVAILABLE:
         return None, None, None
-    window = SDL2Window(title, size=(WIDTH, HEIGHT), position=position)
+    window = SDL2Window(title, size=(CANVAS_WIDTH, CANVAS_HEIGHT), position=position)
     renderer = SDL2Renderer(window)
-    surface = pygame.Surface((WIDTH, HEIGHT)).convert_alpha()
+    surface = pygame.Surface((CANVAS_WIDTH, CANVAS_HEIGHT)).convert_alpha()
     return window, renderer, surface
 
 
@@ -545,7 +558,7 @@ def draw_tutorial_qr_window():
     if qr_raw is None:
         surface_text(tutorial_qr_surface, f"Missing sprite: {TUTORIAL_QR_FILE}", 24, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
     else:
-        qr_image = scale_to_fit(qr_raw, WIDTH - 40, HEIGHT - 70, smooth=True)
+        qr_image = scale_to_fit(qr_raw, CANVAS_WIDTH - 40, CANVAS_HEIGHT - 70, smooth=True)
         if qr_image is not None:
             qr_rect = qr_image.get_rect(center=(SCREEN_CENTER_X, SCREEN_CENTER_Y - 10))
             tutorial_qr_surface.blit(qr_image, qr_rect)
@@ -1149,7 +1162,10 @@ while running:
     # -----------------------------
     # DRAW
     # -----------------------------
-    screen.fill(COLOR_BLACK)
+    # screen.fill(COLOR_BLACK)
+    screen.blit(background, (0, 0))
+
+    canvas.fill((0, 0, 0, 0)) # clear canvas
 
     if state == STATE_CALIBRATING:
         text("Calibrating...", TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y)
@@ -1267,8 +1283,6 @@ while running:
             )[0]
             draw_multiline_text(result_lines, TEXT_SIZE, COLOR_WHITE, SCREEN_CENTER_X, SCREEN_CENTER_Y, line_spacing=LINE_SPACING)
 
-    pygame.display.flip()
-
     if state == STATE_TUTORIAL and current_page()["type"] == "qr":
         draw_tutorial_qr_window()
     if state == STATE_BETWEEN_GAMES:
@@ -1276,6 +1290,9 @@ while running:
     if state == STATE_MATCHING:
         draw_matching_window(current_time)
 
+    # stamp canvas onto center of window
+    screen.blit(canvas, (CANVAS_X, CANVAS_Y))
+    pygame.display.flip()
     clock.tick(60)
 
 close_tutorial_qr_window()
