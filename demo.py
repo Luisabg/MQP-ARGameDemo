@@ -57,7 +57,7 @@ FAST_REFLEX_END_SCREEN_MS = 2200
 PARAGRAPH_MAX_CHARS_PER_LINE = 32
 PARAGRAPH_MAX_LINES_PER_PAGE = 3
 LINE_SPACING = 38
-TEXT_SIZE = 32
+TEXT_SIZE = 40
 
 COLOR_BLACK = (0, 0, 0)
 COLOR_WHITE = (255, 255, 255)
@@ -107,14 +107,15 @@ TUTORIAL_QR_FILE = "SquareQRCODE.png"
 # TEXT HELPERS
 # -----------------------------
 def text(message, size, color, x, y):
-    font = pygame.font.SysFont(None, size)
+    # font = pygame.font.SysFont(None, size)
+    font = pygame.font.Font("fonts/ShareTech-Regular.ttf", size)
     text_surface = font.render(message, True, color)
     text_rect = text_surface.get_rect(center=(x, y))
     canvas.blit(text_surface, text_rect)
 
 
 def draw_multiline_text(lines, size, color, center_x, center_y, line_spacing=35):
-    font = pygame.font.SysFont(None, size)
+    font = pygame.font.Font("fonts/ShareTech-Regular.ttf", size)
     total_height = (len(lines) - 1) * line_spacing
     first_line_y = center_y - total_height / 2
 
@@ -126,14 +127,14 @@ def draw_multiline_text(lines, size, color, center_x, center_y, line_spacing=35)
 
 
 def surface_text(surface, message, size, color, x, y):
-    font = pygame.font.SysFont(None, size)
+    font = pygame.font.Font("fonts/ShareTech-Regular.ttf", size)
     text_surface = font.render(message, True, color)
     text_rect = text_surface.get_rect(center=(x, y))
     surface.blit(text_surface, text_rect)
 
 
 def surface_multiline_text(surface, lines, size, color, center_x, center_y, line_spacing=35):
-    font = pygame.font.SysFont(None, size)
+    font = pygame.font.Font("fonts/ShareTech-Regular.ttf", size)
     total_height = (len(lines) - 1) * line_spacing
     first_line_y = center_y - total_height / 2
 
@@ -601,8 +602,8 @@ def draw_menu_window():
         return
 
     qr_image = scale_to_fit(qr_raw, MENU_QR_SIZE, MENU_QR_SIZE, smooth=True)
-    label_font = pygame.font.SysFont(None, 22)
-    number_font = pygame.font.SysFont(None, 24)
+    label_font = pygame.font.SysFont("fonts/ShareTech-Regular.ttf", 22)
+    number_font = pygame.font.SysFont("fonts/ShareTech-Regular.ttf", 24)
 
     for index, item in enumerate(MENU_ITEMS):
         col = index % 2
