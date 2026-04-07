@@ -29,7 +29,7 @@ pygame.display.set_caption("ARcade")
 screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
 canvas = pygame.Surface((CANVAS_WIDTH, CANVAS_HEIGHT), pygame.SRCALPHA)  # all game draws go here
 
-background = pygame.image.load(os.path.join("sprites", "GlassesBackground.png")).convert()
+background = pygame.image.load(os.path.join("sprites", "GlassesBackgroundSchool.png")).convert()
 background = pygame.transform.scale(background, (WINDOW_WIDTH, WINDOW_HEIGHT))
 
 # -----------------------------
@@ -59,7 +59,7 @@ PARAGRAPH_MAX_LINES_PER_PAGE = 3
 LINE_SPACING = 38
 TEXT_SIZE = 40
 
-COLOR_BLACK = (0, 0, 0)
+COLOR_BLACK = (255, 255, 255) #(0, 0, 0)
 COLOR_WHITE = (255, 255, 255)
 COLOR_GREEN = (60, 200, 100)
 COLOR_YELLOW = (240, 200, 50)
@@ -222,7 +222,7 @@ def load_card_sprite(filename):
     path = os.path.join("sprites", filename)
     try:
         image = pygame.image.load(path).convert_alpha()
-        image = pygame.transform.smoothscale(image, (CARD_W - 16, CARD_H - 16))
+        image = pygame.transform.scale(image, (CARD_W - 16, CARD_H - 16))
         return image
     except (pygame.error, FileNotFoundError):
         return None
@@ -562,7 +562,7 @@ def draw_tutorial_qr_window():
     if qr_raw is None:
         surface_text(tutorial_qr_surface, f"Missing sprite: {TUTORIAL_QR_FILE}", 24, COLOR_BLACK, SCREEN_CENTER_X, SCREEN_CENTER_Y)
     else:
-        qr_image = scale_to_fit(qr_raw, CANVAS_WIDTH - 40, CANVAS_HEIGHT - 70, smooth=True)
+        qr_image = scale_to_fit(qr_raw, CANVAS_WIDTH - 40, CANVAS_HEIGHT - 70, smooth=False)
         if qr_image is not None:
             qr_rect = qr_image.get_rect(center=(SCREEN_CENTER_X, SCREEN_CENTER_Y - 10))
             tutorial_qr_surface.blit(qr_image, qr_rect)
@@ -601,7 +601,7 @@ def draw_menu_window():
         present_surface(menu_renderer, menu_surface)
         return
 
-    qr_image = scale_to_fit(qr_raw, MENU_QR_SIZE, MENU_QR_SIZE, smooth=True)
+    qr_image = scale_to_fit(qr_raw, MENU_QR_SIZE, MENU_QR_SIZE, smooth=False)
     label_font = pygame.font.SysFont("fonts/ShareTech-Regular.ttf", 22)
     number_font = pygame.font.SysFont("fonts/ShareTech-Regular.ttf", 24)
 
